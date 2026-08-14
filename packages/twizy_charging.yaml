@@ -172,9 +172,9 @@ input_number:
     unit_of_measurement: min
 
 # ---------------------------------------------------------------------------
-# Ladeplan (informativ/Debug) – der Lade-Scheduler liest die Tibber-Preise
-# direkt aus dem Tibber-Sensor (today/tomorrow-Attribute) und legt hier nur
-# das Ergebnis seiner Planung ab, kein eigener Preis-Cache.
+# Ladeplan (informativ/Debug) – der Lade-Scheduler ruft die Tibber-Preise
+# per Service (tibber.get_prices) ab und legt hier nur das Ergebnis seiner
+# Planung ab, kein eigener Preis-Cache.
 # ---------------------------------------------------------------------------
 input_text:
   twizy_1_ladeplan_offsets:

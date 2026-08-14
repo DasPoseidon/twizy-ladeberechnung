@@ -13,11 +13,13 @@ blueprint:
        gepflegter Minutenwert.
     3. Bestimmt die nächste Abfahrtszeit (Deadline) aus dem
        Abfahrtszeit-Helper.
-    4. Wählt direkt aus den `today`/`tomorrow`-Attributen des Tibber-Sensors
-       die günstigsten Stunden bis zur Deadline, die in Summe die benötigte
-       Ladedauer abdecken (kein eigener Preis-Cache nötig – die Tibber-
-       Integration hält diese Werte bereits selbst aktuell und fragt die
-       Tibber-API dafür bereits von sich aus nur ca. 1x/Tag ab).
+    4. Ruft den Service `tibber.get_prices` auf (liefert Stundenpreise für
+       heute+morgen als Service-Response, kein eigener Preis-Cache nötig)
+       und wählt daraus die günstigsten Stunden bis zur Deadline, die in
+       Summe die benötigte Ladedauer abdecken. Die Tibber-Integration ruft
+       die eigentliche Tibber-API dabei nur dann auf, wenn die angefragten
+       Daten nicht schon lokal vorliegen – in der Praxis also ungefähr
+       1x/Tag, unabhängig davon, wie oft dieser Scheduler läuft.
     5. Schaltet die zugeordnete Steckdose in diesen Stunden ein – außer die
        Deadline wird sonst verfehlt, dann wird notfalls sofort weitergeladen
        ("Aufhol-Logik").
@@ -222,16 +224,6 @@ blueprint:
         entity:
           domain: input_boolean
 
-    tibber_price_entity:
-      name: Tibber Strompreis-Sensor
-      description: >
-        Sensor der Tibber-Integration mit den Attributen `today`/`tomorrow`
-        (z. B. sensor.strompreis / sensor.electricity_price_...). Wird
-        direkt gelesen, kein eigener Preis-Cache nötig.
-      selector:
-        entity:
-          domain: sensor
-
     min_on_minutes_helper:
       name: Helper – Mindest-Einschaltzeit pro Tag (Minuten)
       description: >
@@ -293,7 +285,6 @@ variables:
   manual_flag_helper: !input manual_flag_helper
   ladeplan_helper: !input ladeplan_helper
   socket_zuordnung_geprueft_helper: !input socket_zuordnung_geprueft_helper
-  tibber_price_entity: !input tibber_price_entity
   min_on_minutes_helper: !input min_on_minutes_helper
   on_time_today_minutes_helper: !input on_time_today_minutes_helper
   on_time_today_date_helper: !input on_time_today_date_helper
@@ -398,6 +389,22 @@ action:
             data:
               date: "{{ today_date_str }}"
 
+  # Tibber-Stundenpreise heute+morgen abrufen. Die Tibber-Integration ruft
+  # die eigentliche Tibber-API dabei nur auf, wenn die angefragten Daten
+  # nicht schon lokal vorliegen (ca. 1x/Tag) - unabhängig davon, wie oft
+  # dieser Schritt hier läuft. continue_on_error, damit ein einzelner
+  # Tibber-Aussetzer nicht den ganzen Prüfzyklus (inkl. Verifikation,
+  # Deadline-Logik etc.) blockiert.
+  - service: tibber.get_prices
+    continue_on_error: true
+    data:
+      # explizit mit Zeitzonen-Offset (isoformat), sonst interpretiert
+      # Home Assistant einen "naiven" Zeitstempel ohne Offset als UTC statt
+      # als lokale Zeit - würde das Fenster um den UTC-Versatz verschieben.
+      start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat() }}"
+      end: "{{ (now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=2)).isoformat() }}"
+    response_variable: tibber_price_response
+
   - variables:
       ovms_etr_val: "{{ states(etr_full_sensor) }}"
       duration_minutes: "{{ (states(custom_duration_helper) | float(120)) if (is_state(use_custom_duration_helper, 'on') or ovms_etr_val in ['unknown', 'unavailable', 'none', '']) else (ovms_etr_val | float(120)) }}"
@@ -420,18 +427,17 @@ action:
       must_charge_now: "{{ minutes_to_deadline <= (duration_minutes + 5) }}"
       current_epoch_hour: "{{ (now().timestamp() | int) // 3600 }}"
       deadline_epoch_hour: "{{ (deadline.timestamp() | int) // 3600 }}"
-      # Preise direkt aus dem Tibber-Sensor lesen (kein eigener Cache nötig -
-      # die Tibber-Integration hält today/tomorrow bereits aktuell und ruft
-      # die Tibber-API dafür selbst nur ca. 1x/Tag ab).
+      # Preise aus der Service-Response von tibber.get_prices (oben) bauen.
+      # Antwortformat: {"prices": {"<Home-Name>": [{"start_time": ..., "price": ...}, ...]}}.
+      # Nur das erste Zuhause wird verwendet (Setup mit einer Tibber-Zählstelle).
       price_entries: >
         {% set ns = namespace(items=[]) %}
-        {% set raw_today = state_attr(tibber_price_entity, 'today') | default([], true) %}
-        {% set raw_tomorrow = state_attr(tibber_price_entity, 'tomorrow') | default([], true) %}
-        {% for e in raw_today + raw_tomorrow %}
-          {% set price = e.total if e.total is defined else e.value %}
-          {% if price is not none and e.start is defined %}
-            {% set eh = (as_datetime(e.start).timestamp() | int) // 3600 %}
-            {% set ns.items = ns.items + [{'epoch_hour': eh, 'price': price}] %}
+        {% set homes = (tibber_price_response.prices.values() | list) if (tibber_price_response is defined and tibber_price_response and tibber_price_response.prices is defined) else [] %}
+        {% set raw_prices = homes[0] if homes else [] %}
+        {% for e in raw_prices %}
+          {% if e.price is defined and e.start_time is defined and e.price is not none %}
+            {% set eh = (as_datetime(e.start_time).timestamp() | int) // 3600 %}
+            {% set ns.items = ns.items + [{'epoch_hour': eh, 'price': e.price}] %}
           {% endif %}
         {% endfor %}
         {{ ns.items }}

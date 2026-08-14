@@ -28,10 +28,10 @@ jeder Kleinigkeit alle anderen Teile mit anfassen.
    (`blueprints/automation/twizy/`), die jeweils eine klar abgegrenzte
    Verantwortung haben und über diese Helper miteinander "kommunizieren":
    - Steckdosen-Zuordnung (Ankunft & Platztausch)
-   - Lade-Scheduler (je Fahrzeug einmal instanziiert; liest die
-     Tibber-Preise direkt aus dem Tibber-Sensor, kein eigener Cache, und
-     berücksichtigt das gemeinsame Stromkreis-Limit nur bei der Planung,
-     nicht per aktiver Überwachung – siehe unten)
+   - Lade-Scheduler (je Fahrzeug einmal instanziiert; ruft die Tibber-Preise
+     per Service ab, kein eigener Cache, und berücksichtigt das gemeinsame
+     Stromkreis-Limit nur bei der Planung, nicht per aktiver Überwachung –
+     siehe unten)
 
 Das ist die in der Home-Assistant-Community übliche Architektur für
 Automatisierungen, die mehr als "wenn X dann Y" brauchen: Helper für
@@ -79,8 +79,10 @@ Leistungssensor der jeweils anderen Steckdose.
 
 ## Voraussetzungen in Home Assistant
 
-- Offizielle **Tibber**-Integration (liefert einen Sensor mit den
-  Attributen `today`/`tomorrow`).
+- Offizielle **Tibber**-Integration. Die Stundenpreise werden über deren
+  Service `tibber.get_prices` abgerufen (die neueren Versionen der
+  Integration stellen `today`/`tomorrow` **nicht** mehr als Sensor-Attribute
+  bereit – nur noch aggregierte Werte wie `min_price`/`max_price`/`peak`).
 - **OVMS**-Integration für beide Twizys mit (mindestens):
   - Standort/Zone-Entität (device_tracker oder Zone-Sensor, Zustand
     `home`/`not_home`)
@@ -113,7 +115,7 @@ Leistungssensor der jeweils anderen Steckdose.
    | Blueprint | Wie oft anlegen | Wichtige Eingaben |
    |---|---|---|
    | Steckdosen-Zuordnung | 1× | Standort- & Moving-Sensoren beider Fahrzeuge |
-   | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren **des jeweiligen Fahrzeugs**, den Tibber-Preis-Sensor, beide Schalter + beide Leistungssensoren, sowie bei der zweiten Instanz die `twizy_2_*`-Helper statt der `twizy_1_*`-Defaults auswählen |
+   | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren **des jeweiligen Fahrzeugs**, beide Schalter + beide Leistungssensoren, sowie bei der zweiten Instanz die `twizy_2_*`-Helper statt der `twizy_1_*`-Defaults auswählen |
 
 4. In den Helpern (`Einstellungen → Geräte & Dienste → Helfer`) die
    Abfahrtszeiten (`twizy_1_abfahrtszeit`, `twizy_2_abfahrtszeit`) und bei
@@ -124,25 +126,34 @@ Leistungssensor der jeweils anderen Steckdose.
 ## Verhalten im Detail
 
 ### Tibber-Preise
-Der Lade-Scheduler liest die Preise bei jedem Prüfzyklus direkt aus den
-`today`/`tomorrow`-Attributen des Tibber-Sensors – kein eigener Cache, kein
-Zwischenspeicher-Helper.
+Der Lade-Scheduler ruft bei jedem Prüfzyklus den Service `tibber.get_prices`
+auf (Zeitraum heute 00:00 bis übermorgen 00:00) und baut daraus die Liste
+der Stundenpreise – kein eigener Cache, kein Zwischenspeicher-Helper.
 
-Das ist unproblematisch, weil die offizielle Tibber-Integration die
-Tibber-API bereits von sich aus sehr sparsam abfragt: Der interne
-`TibberFetchPriceCoordinator` prüft zwar alle 1–10 Minuten (randomisiert),
-ob neue Daten nötig sind, dieser Check läuft aber rein lokal gegen bereits
-geladene Daten – kein Netzwerkzugriff. Ein echter API-Call passiert nur,
-wenn die Preise für heute komplett fehlen, oder wenn die Preise für morgen
-fehlen und ein randomisierter Zeitpunkt zwischen 14:00 und 22:00 Uhr
-überschritten ist – in der Praxis also ungefähr **1× pro Tag**, unabhängig
-davon, wie oft Sensoren/Automatisierungen den Sensor lesen (Quelle:
-[`homeassistant/components/tibber/coordinator.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/components/tibber/coordinator.py),
-Klassen `TibberFetchPriceCoordinator`/`TibberPriceCoordinator`). Der
-Sensorwert, den der Lade-Scheduler liest, ist also ohnehin schon aktuell
-gehalten – ein zusätzlicher eigener Cache hätte hier keinen Vorteil mehr
-geboten, nur zusätzliche Komplexität (eigener Helper, 255-Zeichen-Limit von
-`input_text`, Zeitzonen-Handling für den Referenzzeitpunkt).
+**Wichtig, falls du das nachvollziehen willst:** Ältere Community-Blueprints
+und -Anleitungen gehen oft davon aus, dass der Tibber-Preis-Sensor
+`today`/`tomorrow`-Attribute mit den Stundenpreisen hat. Das stimmt für die
+aktuelle offizielle Integration **nicht mehr** – der Sensor liefert nur noch
+aggregierte Werte (`min_price`, `max_price`, `avg_price`, `off_peak_1`,
+`peak`, `off_peak_2`, `intraday_price_ranking`, s.
+[`homeassistant/components/tibber/sensor.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/components/tibber/sensor.py)).
+Die vollständige Stundenliste bekommt man nur noch über den Service
+`tibber.get_prices` (Antwortformat: `{"prices": {"<Zuhause-Name>": [{"start_time": ..., "price": ...}, ...]}}`,
+s.
+[`homeassistant/components/tibber/services.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/components/tibber/services.py)).
+Das kannst du in **Entwicklerwerkzeuge → Aktionen** selbst ausprobieren:
+Aktion `tibber.get_prices` auswählen, "Antwort anzeigen" aktivieren, und
+ausführen.
+
+Dass der Scheduler diesen Service bei jedem Prüfzyklus aufruft, führt trotzdem
+nicht zu häufigen echten API-Aufrufen: Die Tibber-Integration ruft die
+eigentliche Tibber-API dabei nur auf, wenn die angefragten Daten nicht schon
+lokal vorliegen – ihr interner `TibberFetchPriceCoordinator` prüft das
+ohnehin alle 1–10 Minuten rein lokal und holt neue Daten nur, wenn die
+Preise für heute komplett fehlen oder die für morgen fehlen und ein
+randomisierter Zeitpunkt zwischen 14:00 und 22:00 Uhr überschritten ist –
+in der Praxis also ungefähr **1× pro Tag** (Quelle:
+[`homeassistant/components/tibber/coordinator.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/components/tibber/coordinator.py)).
 
 ### Steckdosen-Zuordnung
 - Fährt ein Fahrzeug in die `home`-Zone ein, wird es "außen" zugeordnet;
