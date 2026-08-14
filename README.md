@@ -137,10 +137,33 @@ Bordmitteln (Blueprints + Helpers + Templates) aus.
 Liest kurz nachdem Tibber die Preise des Folgetags veröffentlicht (Default
 13:05 Uhr) die Preise aus dem Sensor-Attribut, ermittelt die günstigsten N
 Stunden im Cache-Fenster (heute+morgen) und speichert sie kompakt (als
-Unix-Epoch-Stunden, semikolon-getrennt) in `input_text`-Helpern. **Alle**
-anderen Automatisierungen lesen ausschließlich diese Helper – der
-Tibber-Sensor/-Service wird zwischen den täglichen Läufen nicht mehr
-angefasst.
+Unix-Epoch-Stunden, semikolon-getrennt) in `input_text`-Helpern. Alle
+anderen Automatisierungen lesen ausschließlich diese Helper, nicht mehr
+den Tibber-Sensor selbst.
+
+**Klarstellung zur Tibber-API:** Die offizielle Tibber-Integration muss die
+Preise natürlich irgendwann von der echten Tibber-API abrufen – anders geht
+es nicht. Sie tut das aber bereits von sich aus sehr sparsam: Der interne
+`TibberFetchPriceCoordinator` prüft zwar alle 1–10 Minuten (randomisiert),
+ob neue Daten nötig sind, dieser Check läuft aber rein lokal gegen bereits
+geladene Daten. Ein echter API-Call passiert nur, wenn die Preise für heute
+komplett fehlen, oder wenn die Preise für morgen fehlen und ein
+randomisierter Zeitpunkt zwischen 14:00 und 22:00 Uhr überschritten ist –
+in der Praxis also ungefähr **1× pro Tag**, unabhängig davon, wie oft
+Sensoren gelesen werden (Quelle:
+[`homeassistant/components/tibber/coordinator.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/components/tibber/coordinator.py),
+Klassen `TibberFetchPriceCoordinator`/`TibberPriceCoordinator`).
+
+Das heißt: Der eigentliche Grund, weshalb hier zusätzlich in eigene Helper
+gecacht wird, ist **nicht**, die Tibber-API vor Überlastung zu schützen –
+das erledigt die Integration bereits selbst. Der Nutzen dieses Caches ist,
+dass der Lade-Scheduler eine stabile, kompakte, von Tibbers eigenem
+Update-Zyklus entkoppelte Momentaufnahme bekommt, mit der er unabhängig von
+Sensor-Neuberechnungen (die alle 15 min laufen) rechnen kann – und dass die
+ursprünglich gewünschte "nur 1×/Tag abfragen"-Vorgabe damit auch explizit
+und nachvollziehbar im eigenen Automatisierungs-Code abgebildet ist, statt
+sich implizit auf internes Integrationsverhalten zu verlassen, das sich
+zwischen HA-Versionen ändern könnte.
 
 ### Steckdosen-Zuordnung
 - Fährt ein Fahrzeug in die `home`-Zone ein, wird es "außen" zugeordnet;
