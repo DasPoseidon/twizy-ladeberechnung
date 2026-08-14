@@ -87,7 +87,9 @@ Leistungssensor der jeweils anderen Steckdose.
   - "Fährt gerade"-Sensor (Moving/Trip binary_sensor)
   - SoC-Sensor (%)
   - geschätzte Restzeit bis voll (Minuten)
-  - Ladekabel-gesteckt-Sensor (binary_sensor)
+  - Lade-/Fahrzustand als Text-Sensor (z. B. "charging"/"topoff"/"done"/
+    "stopped" – ein eigener "Kabel gesteckt"-Sensor wird nicht
+    vorausgesetzt, da viele OVMS-Setups keinen solchen bereitstellen)
 - Zwei schaltbare Steckdosen mit **Leistungsmessung** (z. B. Shelly, Sonoff
   POW, Tasmota-Plug) – ein `switch`- und ein `sensor`(W)-Entity je Steckdose.
 
@@ -152,12 +154,17 @@ geboten, nur zusätzliche Komplexität (eigener Helper, 255-Zeichen-Limit von
   angenommen und die Zuordnung vertauscht.
 
 ### Verifikation zu Ladebeginn
-Bevor der Lade-Scheduler eine Steckdose tatsächlich einschaltet, prüft er,
-ob am dafür laut Zuordnung vorgesehenen Fahrzeug laut OVMS überhaupt ein
-Ladekabel gesteckt ist. Falls nicht, wird **nicht** eingeschaltet, sondern
-eine Benachrichtigung ausgelöst und `input_boolean.twizy_socket_zuordnung_geprueft`
-auf "aus" gesetzt – ein Hinweis, dass die Zuordnung von Hand korrigiert
-werden sollte.
+Da kein zuverlässiger "Kabel gesteckt"-Sensor vorausgesetzt wird, erfolgt
+die Verifikation *nach* dem Einschalten, anhand des OVMS-Lade-/Fahrzustands:
+Meldet der Sensor des zugeordneten Fahrzeugs innerhalb der Toleranzzeit
+(Default 15 min) einen "lädt aktiv"-Wert (Default nur `charging`,
+konfigurierbar), gilt die Zuordnung als bestätigt
+(`input_boolean.twizy_socket_zuordnung_geprueft` → an). Passiert das nicht,
+wird davon ausgegangen, dass die Zuordnung falsch ist: Die Steckdose wird
+wieder ausgeschaltet und eine Benachrichtigung ausgelöst (dedupliziert über
+eine feste `notification_id`, kein Spam bei wiederholten Versuchen). Der
+nächste Prüfzyklus versucht es automatisch erneut, bis entweder die
+Zuordnung korrigiert wurde oder tatsächlich geladen wird.
 
 ### Preisoptimiertes Laden & Abfahrtszeit
 Für jedes Fahrzeug wird pro Prüfzyklus (Default alle 10 min) berechnet:
@@ -218,6 +225,12 @@ wieder eingeschaltet werden soll.
 - Die "manuell eingeschaltet"-Erkennung basiert auf der Home-Assistant-
   Heuristik "Zustandsänderung ohne automation-Kontext" und ist nicht zu
   100 % robust (z. B. wenn ein Skript ohne eigenen Kontext schaltet).
+- Die Verifikation über den Lade-/Fahrzustand greift auch bei manuell
+  gestarteten Ladungen (bewusst so, damit eine falsche Zuordnung immer
+  auffällt) – dadurch schaltet sich eine manuell eingeschaltete Steckdose
+  nach der Toleranzzeit wieder ab, wenn OVMS kein "lädt aktiv" meldet,
+  selbst wenn das gewünscht gewesen wäre. Bei Bedarf `verification_grace_period`
+  großzügiger einstellen oder die Bedingung im Blueprint anpassen.
 - Die eigene Ladedauer-Berechnung (Alternative zur OVMS-Schätzung) ist als
   Schalter + Helper vorbereitet, die eigentliche Berechnung müsste noch mit
   fahrzeugspezifischen Werten (Akkukapazität, Ladeleistung, Temperatur-

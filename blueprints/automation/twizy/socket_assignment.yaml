@@ -18,9 +18,10 @@ blueprint:
     Steckdosen getauscht haben – die Zuordnung wird vertauscht.
 
     Hinweis: Die tatsächliche Verifikation "hängt das erwartete Fahrzeug auch
-    wirklich am erwarteten Kabel" erfolgt nicht hier, sondern zu Ladebeginn im
-    Blueprint "Twizy: Lade-Scheduler" (dort wird der Ladekabel-Sensor jedes
-    Fahrzeugs geprüft, bevor die zugeordnete Steckdose eingeschaltet wird).
+    wirklich an der erwarteten Steckdose" erfolgt nicht hier, sondern im
+    Blueprint "Twizy: Lade-Scheduler" (dort wird nach dem Einschalten anhand
+    des OVMS-Lade-/Fahrzustands jedes Fahrzeugs geprüft, ob es tatsächlich
+    zu laden beginnt).
   domain: automation
   source_url: https://github.com/DasPoseidon/twizy-ladeberechnung/blob/main/blueprints/automation/twizy/socket_assignment.yaml
   input:

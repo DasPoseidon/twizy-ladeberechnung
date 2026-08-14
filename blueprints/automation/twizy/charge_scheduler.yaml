@@ -26,10 +26,13 @@ blueprint:
        Kontext) und die Preisoptimierung übersteuert – die Abfahrtszeit als
        spätester Voll-Zeitpunkt bleibt aber weiter gültig (die Automatisierung
        schaltet trotzdem ab, sobald das Fahrzeug voll ist).
-    7. Bevor tatsächlich eingeschaltet wird, wird zu Ladebeginn geprüft, ob
-       laut OVMS überhaupt ein Ladekabel am erwarteten Fahrzeug steckt – wenn
-       nicht, wird nicht eingeschaltet, sondern eine Benachrichtigung
-       ausgelöst (mutmaßlich falsche Steckdosen-Zuordnung).
+    7. Nach dem Einschalten wird anhand des OVMS-Lade-/Fahrzustands-Sensors
+       geprüft, ob das Fahrzeug tatsächlich zu laden beginnt. Meldet der
+       Sensor innerhalb der Toleranzzeit keinen "lädt"-Zustand, wird davon
+       ausgegangen, dass die Steckdosen-Zuordnung falsch ist: Es wird
+       wieder ausgeschaltet und eine Benachrichtigung ausgelöst. Ein
+       eigener "Kabel gesteckt"-Sensor wird bewusst nicht vorausgesetzt, da
+       viele OVMS-Setups keinen solchen Sensor bereitstellen.
     8. Das gemeinsame Stromkreis-Limit wird NICHT aktiv überwacht (die
        Steckdosen haben eigenen Überlastschutz: bei Überlast wird die
        jeweilige Steckdose selbstständig `unavailable` und später wieder im
@@ -138,11 +141,37 @@ blueprint:
         entity:
           domain: sensor
 
-    cable_connected_sensor:
-      name: OVMS – Ladekabel gesteckt (dieses Fahrzeug)
+    charge_state_sensor:
+      name: OVMS – Lade-/Fahrzustand (dieses Fahrzeug)
+      description: >
+        Sensor der den Ladezustand als Text liefert (z. B. "charging",
+        "topoff", "done", "stopped", "prepare" – abhängig vom OVMS-Setup).
+        Dient nach dem Einschalten zur Verifikation, dass das erwartete
+        Fahrzeug tatsächlich lädt.
       selector:
         entity:
-          domain: binary_sensor
+          domain: sensor
+
+    charging_state_values:
+      name: Werte für "lädt aktiv"
+      description: >
+        Kommagetrennte Liste der Sensorwerte von oben, die "lädt gerade
+        tatsächlich" bedeuten (Groß-/Kleinschreibung egal). Meist reicht
+        einfach "charging" – bei Bedarf ergänzen, z. B. um "topoff".
+      default: "charging"
+      selector:
+        text: {}
+
+    verification_grace_period:
+      name: Toleranzzeit für Lade-Verifikation
+      description: >
+        Wie lange nach dem Einschalten gewartet wird, bevor ohne erkannten
+        "lädt aktiv"-Zustand von einer falschen Steckdosen-Zuordnung
+        ausgegangen und wieder ausgeschaltet wird.
+      default:
+        minutes: 15
+      selector:
+        duration: {}
 
     departure_time_helper:
       name: Helper – Abfahrtszeit dieses Fahrzeugs
@@ -222,7 +251,9 @@ variables:
   soc_sensor: !input soc_sensor
   soc_full_threshold: !input soc_full_threshold
   etr_full_sensor: !input etr_full_sensor
-  cable_connected_sensor: !input cable_connected_sensor
+  charge_state_sensor: !input charge_state_sensor
+  charging_state_values: !input charging_state_values
+  verification_grace_period: !input verification_grace_period
   departure_time_helper: !input departure_time_helper
   use_custom_duration_helper: !input use_custom_duration_helper
   custom_duration_helper: !input custom_duration_helper
@@ -245,6 +276,11 @@ trigger:
   - platform: state
     entity_id: !input custom_duration_helper
     id: periodic
+  - platform: state
+    entity_id: !input charge_state_sensor
+    id: periodic
+  # ^ für zügige Verifikation nach dem Einschalten, statt bis zum nächsten
+  #   Prüfzyklus zu warten.
   - platform: state
     entity_id:
       - !input innen_switch
@@ -354,6 +390,17 @@ action:
       plan_offsets: "{{ cheapest_in_window | map(attribute='epoch_hour') | list | sort }}"
       should_charge_price: "{{ current_epoch_hour in plan_offsets }}"
       should_charge_now: "{{ (not is_full) and (is_manual or should_charge_price or must_charge_now) }}"
+      # Verifikation "erwartetes Fahrzeug lädt tatsächlich" über den
+      # OVMS-Lade-/Fahrzustand statt eines (oft nicht vorhandenen)
+      # Kabel-gesteckt-Sensors.
+      charging_values_list: "{{ charging_state_values.split(',') | map('trim') | map('lower') | list }}"
+      is_charging_now: "{{ (states(charge_state_sensor) | lower | trim) in charging_values_list }}"
+      seconds_since_switch_on: "{{ (now() - states[current_switch].last_changed).total_seconds() if is_state(current_switch, 'on') else 0 }}"
+      verification_grace_seconds: "{{ timedelta(**verification_grace_period).total_seconds() }}"
+      verification_failed: >-
+        {{ is_state(current_switch, 'on') and not is_charging_now and
+           not is_state(socket_zuordnung_geprueft_helper, 'on') and
+           seconds_since_switch_on >= verification_grace_seconds }}
 
   - if:
       - condition: template
@@ -377,30 +424,14 @@ action:
               {{ should_charge_now and is_state(current_switch, 'off') and
                  (is_manual or not would_overload_if_started) }}
         sequence:
-          - if:
-              - condition: template
-                value_template: >
-                  {{ is_state(cable_connected_sensor, 'on') or is_state(cable_connected_sensor, 'true') }}
-            then:
-              - service: input_boolean.turn_on
-                target:
-                  entity_id: !input socket_zuordnung_geprueft_helper
-              - service: switch.turn_on
-                target:
-                  entity_id: "{{ current_switch }}"
-            else:
-              - service: input_boolean.turn_off
-                target:
-                  entity_id: !input socket_zuordnung_geprueft_helper
-              - service: persistent_notification.create
-                data:
-                  title: "Twizy Ladesteuerung: Zuordnung prüfen"
-                  message: >
-                    {{ vehicle_id }} sollte laut Zuordnung an der Steckdose
-                    {{ 'innen' if current_switch == innen_switch else 'außen' }}
-                    laden, das Ladekabel ist laut OVMS aber nicht gesteckt.
-                    Bitte input_select-Zuordnung prüfen/korrigieren, bevor
-                    weiter geladen wird.
+          # zurücksetzen: diese Ladesitzung ist noch nicht durch einen
+          # beobachteten "lädt aktiv"-Zustand bestätigt worden.
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input socket_zuordnung_geprueft_helper
+          - service: switch.turn_on
+            target:
+              entity_id: "{{ current_switch }}"
       - conditions:
           - condition: template
             value_template: "{{ (not should_charge_now) and is_state(current_switch, 'on') }}"
@@ -408,6 +439,39 @@ action:
           - service: switch.turn_off
             target:
               entity_id: "{{ current_switch }}"
+
+  # --- Verifikation: lädt das erwartete Fahrzeug tatsächlich? ---
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ is_state(current_switch, 'on') and is_charging_now }}"
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: !input socket_zuordnung_geprueft_helper
+          - service: persistent_notification.dismiss
+            data:
+              notification_id: "twizy_{{ vehicle_id }}_zuordnung_warnung"
+      - conditions:
+          - condition: template
+            value_template: "{{ verification_failed }}"
+        sequence:
+          - service: switch.turn_off
+            target:
+              entity_id: "{{ current_switch }}"
+          - service: persistent_notification.create
+            data:
+              notification_id: "twizy_{{ vehicle_id }}_zuordnung_warnung"
+              title: "Twizy Ladesteuerung: Zuordnung prüfen"
+              message: >
+                {{ vehicle_id }} sollte laut Zuordnung an der Steckdose
+                {{ 'innen' if current_switch == innen_switch else 'außen' }}
+                laden, meldet laut OVMS-Lade-/Fahrzustand aber seit
+                {{ (verification_grace_seconds / 60) | round(0) | int }}
+                Minuten keinen "lädt aktiv"-Zustand. Steckdose wurde
+                sicherheitshalber wieder ausgeschaltet – bitte
+                input_select-Zuordnung prüfen/korrigieren. (Wird beim
+                nächsten Prüfzyklus automatisch erneut versucht.)
 
 mode: single
 max_exceeded: silent
