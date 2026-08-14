@@ -30,9 +30,18 @@ blueprint:
        laut OVMS überhaupt ein Ladekabel am erwarteten Fahrzeug steckt – wenn
        nicht, wird nicht eingeschaltet, sondern eine Benachrichtigung
        ausgelöst (mutmaßlich falsche Steckdosen-Zuordnung).
-    8. Das gemeinsame 3-kW-Stromkreis-Limit wird NICHT hier, sondern im
-       separaten Blueprint "Twizy: Gemeinsames Stromkreis-Limit" überwacht;
-       dessen Pausier-Helper wird hier lediglich respektiert.
+    8. Das gemeinsame Stromkreis-Limit wird NICHT aktiv überwacht (die
+       Steckdosen haben eigenen Überlastschutz: bei Überlast wird die
+       jeweilige Steckdose selbstständig `unavailable` und später wieder im
+       Zustand "aus" verfügbar) – sondern nur bei der Lade-*Planung*
+       berücksichtigt: Es wird nicht neu eingeschaltet, wenn die andere
+       Steckdose bereits eingeschaltet ist und die Summe aus ihrer
+       gemessenen Leistung plus der eigenen typischen Ladeleistung das
+       Limit überschreiten würde.
+    9. Wechselt die eigene Steckdose von "nicht verfügbar" zurück zu "aus"
+       (Erholung nach einer Überlast-Abschaltung durch die Steckdose
+       selbst), wird sofort neu bewertet, ob wieder eingeschaltet werden
+       soll.
   domain: automation
   source_url: https://github.com/DasPoseidon/twizy-ladeberechnung/blob/main/blueprints/automation/twizy/charge_scheduler.yaml
   input:
@@ -59,6 +68,40 @@ blueprint:
       selector:
         entity:
           domain: switch
+
+    innen_power_sensor:
+      name: Steckdose "innen" – Leistungssensor (W)
+      description: Wird nur genutzt, um vor dem Einschalten eine drohende Überlast des gemeinsamen Stromkreises einzuschätzen.
+      selector:
+        entity:
+          domain: sensor
+
+    aussen_power_sensor:
+      name: Steckdose "außen" – Leistungssensor (W)
+      selector:
+        entity:
+          domain: sensor
+
+    max_power_helper:
+      name: Helper – maximale Gesamtleistung des Stromkreises (W)
+      default: input_number.twizy_max_gesamtleistung_watt
+      selector:
+        entity:
+          domain: input_number
+
+    typical_power_watt:
+      name: Typische Ladeleistung dieses Fahrzeugs (W)
+      description: >
+        Schätzwert, wie viel dieses Fahrzeug beim Laden typischerweise
+        zieht. Dient nur dazu, vor dem Einschalten abzuschätzen, ob das
+        gemeinsame Limit voraussichtlich überschritten würde – keine exakte
+        Messung nötig, lieber etwas großzügig schätzen.
+      default: 2300
+      selector:
+        number:
+          min: 500
+          max: 4000
+          step: 50
 
     innen_socket_helper:
       name: Helper – Steckdose "innen" belegt durch
@@ -129,13 +172,6 @@ blueprint:
         entity:
           domain: input_boolean
 
-    paused_flag_helper:
-      name: Helper – wegen Stromkreis-Limit pausiert
-      default: input_boolean.twizy_1_leistungsbedingt_pausiert
-      selector:
-        entity:
-          domain: input_boolean
-
     ladeplan_helper:
       name: Helper – aktueller Ladeplan (Debug/Info)
       default: input_text.twizy_1_ladeplan_offsets
@@ -177,6 +213,10 @@ variables:
   vehicle_id: !input vehicle_id
   innen_switch: !input innen_switch
   aussen_switch: !input aussen_switch
+  innen_power_sensor: !input innen_power_sensor
+  aussen_power_sensor: !input aussen_power_sensor
+  max_power_helper: !input max_power_helper
+  typical_power_watt: !input typical_power_watt
   innen_socket_helper: !input innen_socket_helper
   aussen_socket_helper: !input aussen_socket_helper
   soc_sensor: !input soc_sensor
@@ -187,7 +227,6 @@ variables:
   use_custom_duration_helper: !input use_custom_duration_helper
   custom_duration_helper: !input custom_duration_helper
   manual_flag_helper: !input manual_flag_helper
-  paused_flag_helper: !input paused_flag_helper
   ladeplan_helper: !input ladeplan_helper
   socket_zuordnung_geprueft_helper: !input socket_zuordnung_geprueft_helper
   tibber_price_entity: !input tibber_price_entity
@@ -207,8 +246,16 @@ trigger:
     entity_id: !input custom_duration_helper
     id: periodic
   - platform: state
-    entity_id: !input paused_flag_helper
+    entity_id:
+      - !input innen_switch
+      - !input aussen_switch
+    from: "unavailable"
+    to: "off"
     id: periodic
+  # ^ Steckdose war überlastbedingt "nicht verfügbar" und ist gerade wieder
+  #   (im Zustand "aus") verfügbar geworden -> sofort neu bewerten, ob
+  #   wieder eingeschaltet werden soll, statt auf den nächsten Prüfzyklus
+  #   zu warten.
   - platform: state
     entity_id:
       - !input innen_switch
@@ -225,9 +272,12 @@ trigger:
 action:
   - variables:
       # bewusst als einzeiliger ternärer Ausdruck (kein {% if %}-Block):
-      # nur so bleibt current_switch garantiert ein sauberer Entity-ID-String
-      # ohne eingestreute Zeilenumbrüche/Leerzeichen aus dem YAML-Block.
+      # nur so bleiben current_switch/other_switch garantiert saubere
+      # Entity-ID-Strings ohne eingestreute Zeilenumbrüche/Leerzeichen aus
+      # dem YAML-Block.
       current_switch: "{{ innen_switch if states(innen_socket_helper) == vehicle_id else (aussen_switch if states(aussen_socket_helper) == vehicle_id else none) }}"
+      other_switch: "{{ aussen_switch if states(innen_socket_helper) == vehicle_id else (innen_switch if states(aussen_socket_helper) == vehicle_id else none) }}"
+      other_power_sensor: "{{ aussen_power_sensor if states(innen_socket_helper) == vehicle_id else innen_power_sensor }}"
 
   - if:
       - condition: template
@@ -266,7 +316,15 @@ action:
       soc: "{{ states(soc_sensor) | float(0) }}"
       is_full: "{{ soc >= (soc_full_threshold | float) }}"
       is_manual: "{{ is_state(manual_flag_helper, 'on') }}"
-      is_paused: "{{ is_state(paused_flag_helper, 'on') }}"
+      # Kein aktives Überwachen/Abschalten wegen Überlast - die Steckdosen
+      # schützen sich selbst (werden bei Überlast "unavailable" und später
+      # wieder "aus"). Hier wird das Limit nur beim EINSCHALTEN beachtet:
+      # nicht neu einschalten, wenn die andere Steckdose schon an ist und
+      # gemessene Leistung + eigene typische Ladeleistung das Limit
+      # voraussichtlich überschreiten würde.
+      would_overload_if_started: >-
+        {{ is_state(other_switch, 'on') and
+           ((states(other_power_sensor) | float(0)) + typical_power_watt) > (states(max_power_helper) | float(3000)) }}
       minutes_to_deadline: "{{ (deadline - now()).total_seconds() / 60 }}"
       must_charge_now: "{{ minutes_to_deadline <= (duration_minutes + 5) }}"
       current_epoch_hour: "{{ (now().timestamp() | int) // 3600 }}"
@@ -295,7 +353,7 @@ action:
             | sort(attribute='price'))[:needed_slots | int] }}
       plan_offsets: "{{ cheapest_in_window | map(attribute='epoch_hour') | list | sort }}"
       should_charge_price: "{{ current_epoch_hour in plan_offsets }}"
-      should_charge_now: "{{ (not is_full) and (not is_paused) and (is_manual or should_charge_price or must_charge_now) }}"
+      should_charge_now: "{{ (not is_full) and (is_manual or should_charge_price or must_charge_now) }}"
 
   - if:
       - condition: template
@@ -315,7 +373,9 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ should_charge_now and is_state(current_switch, 'off') }}"
+            value_template: >-
+              {{ should_charge_now and is_state(current_switch, 'off') and
+                 (is_manual or not would_overload_if_started) }}
         sequence:
           - if:
               - condition: template

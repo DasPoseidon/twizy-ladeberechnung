@@ -57,16 +57,6 @@ input_boolean:
     icon: mdi:hand-back-right
     initial: false
 
-  twizy_1_leistungsbedingt_pausiert:
-    name: "Twizy 1 – wegen 3kW-Stromkreis-Limit pausiert"
-    icon: mdi:pause-circle
-    initial: false
-
-  twizy_2_leistungsbedingt_pausiert:
-    name: "Twizy 2 – wegen 3kW-Stromkreis-Limit pausiert"
-    icon: mdi:pause-circle
-    initial: false
-
   twizy_1_eigene_ladedauer_verwenden:
     name: "Twizy 1 – selbst berechnete Ladedauer statt OVMS-Schätzung verwenden"
     icon: mdi:calculator
@@ -122,6 +112,9 @@ input_number:
     step: 50
     initial: 3000
     unit_of_measurement: W
+    # Wird vom Lade-Scheduler nur beim EINSCHALTEN geprüft (Vermeidung
+    # einer absehbaren Überlast), nicht aktiv überwacht - die Steckdosen
+    # haben eigenen Überlastschutz.
 
 # ---------------------------------------------------------------------------
 # Ladeplan (informativ/Debug) – der Lade-Scheduler liest die Tibber-Preise

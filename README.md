@@ -14,7 +14,6 @@ Aufgabe braucht aber genau das:
 - welches Fahrzeug hängt gerade an welcher Steckdose (ändert sich bei jeder
   Ankunft/Abfahrt),
 - ob gerade manuell übersteuert wurde,
-- ob eine Steckdose wegen des 3‑kW-Limits pausiert ist,
 - der aktuell berechnete Ladeplan.
 
 Ein Monolith-Blueprint, das all das in einer einzigen riesigen Automatisierung
@@ -25,13 +24,14 @@ jeder Kleinigkeit alle anderen Teile mit anfassen.
 
 1. Ein kleines **Helper-Paket** (`packages/twizy_charging.yaml`) legt alle
    `input_*`-Entities an, die den Zustand halten.
-2. Drei fokussierte, wiederverwendbare **Blueprints**
+2. Zwei fokussierte, wiederverwendbare **Blueprints**
    (`blueprints/automation/twizy/`), die jeweils eine klar abgegrenzte
    Verantwortung haben und über diese Helper miteinander "kommunizieren":
    - Steckdosen-Zuordnung (Ankunft & Platztausch)
    - Lade-Scheduler (je Fahrzeug einmal instanziiert; liest die
-     Tibber-Preise direkt aus dem Tibber-Sensor, kein eigener Cache)
-   - Gemeinsames Stromkreis-Limit
+     Tibber-Preise direkt aus dem Tibber-Sensor, kein eigener Cache, und
+     berücksichtigt das gemeinsame Stromkreis-Limit nur bei der Planung,
+     nicht per aktiver Überwachung – siehe unten)
 
 Das ist die in der Home-Assistant-Community übliche Architektur für
 Automatisierungen, die mehr als "wenn X dann Y" brauchen: Helper für
@@ -66,22 +66,16 @@ Bordmitteln (Blueprints + Helpers + Templates) aus.
                    │ switch.turn_on/off                                       │
                    ▼                                                          ▼
              Steckdose innen/außen (je nach Zuordnung)         Steckdose innen/außen (je nach Zuordnung)
-                   ▲                                                          ▲
-                   │                        Leistungssensoren                │
-                   └──────────────┬───────────────────────────────────────────┘
-                                  ▼
-                    ┌──────────────────────────────┐
-                    │ shared_circuit_guard.yaml     │
-                    │ (Blueprint, überwacht Summe    │
-                    │ beider Leistungssensoren)      │
-                    └──────────────┬─────────────────┘
-                                   │ setzt
-                                   ▼
-                 input_boolean.twizy_{1,2}_leistungsbedingt_pausiert
-                                   │ wird respektiert von
-                                   ▼
-                        charge_scheduler.yaml (beide Instanzen)
+                   ▲            │ Leistungssensor (vor dem Einschalten          ▲            │
+                   │            │ gegengeprüft, siehe "Gemeinsames Limit")      │            │
+                   └────────────┴────────────────────────────────────────────────────────────┘
 ```
+
+Die beiden Steckdosen haben eigenen Überlastschutz (werden bei zu hoher
+Last selbstständig `unavailable` und später wieder `off`). Es gibt daher
+**keine** dritte, aktiv überwachende Automatisierung mehr – jeder
+Lade-Scheduler prüft nur vor dem eigenen Einschalten kurz den
+Leistungssensor der jeweils anderen Steckdose.
 
 ## Voraussetzungen in Home Assistant
 
@@ -111,14 +105,13 @@ Bordmitteln (Blueprints + Helpers + Templates) aus.
      als Blueprint-Quelle importieren).
 2. Home Assistant neu laden (YAML-Konfiguration neu laden reicht,
    Neustart nicht zwingend nötig).
-3. Unter **Einstellungen → Automatisierungen → Blueprints** die drei
+3. Unter **Einstellungen → Automatisierungen → Blueprints** die beiden
    Blueprints als Automatisierungen anlegen:
 
    | Blueprint | Wie oft anlegen | Wichtige Eingaben |
    |---|---|---|
    | Steckdosen-Zuordnung | 1× | Standort- & Moving-Sensoren beider Fahrzeuge |
-   | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren **des jeweiligen Fahrzeugs**, den Tibber-Preis-Sensor, sowie bei der zweiten Instanz die `twizy_2_*`-Helper statt der `twizy_1_*`-Defaults auswählen |
-   | Gemeinsames Stromkreis-Limit | 1× | beide Schalter + Leistungssensoren |
+   | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren **des jeweiligen Fahrzeugs**, den Tibber-Preis-Sensor, beide Schalter + beide Leistungssensoren, sowie bei der zweiten Instanz die `twizy_2_*`-Helper statt der `twizy_1_*`-Defaults auswählen |
 
 4. In den Helpern (`Einstellungen → Geräte & Dienste → Helfer`) die
    Abfahrtszeiten (`twizy_1_abfahrtszeit`, `twizy_2_abfahrtszeit`) und bei
@@ -188,13 +181,25 @@ aber als spätester "voll"-Zeitpunkt gültig – die Automatisierung schaltet
 weiterhin ab, sobald der SoC-Schwellwert erreicht ist.
 
 ### Gemeinsames 3-kW-Limit
-Überschreitet die Summe beider Leistungssensoren für die konfigurierte
-Entprellzeit (Default 30 s) das Limit, wird eine der beiden Steckdosen
-abgeschaltet (Heuristik: die zuletzt gestartete, siehe Blueprint-Beschreibung)
-und als "leistungsbedingt pausiert" markiert. Nach ausreichend langer
-Erholphase (Default 5 min unter Limit − Sicherheitsabstand) wird die Pause
-aufgehoben; das Wiedereinschalten übernimmt dann regulär der jeweilige
-Lade-Scheduler.
+Es gibt **keine aktive Überwachung/Abschaltung** durch die Automatisierung –
+die Steckdosen haben eigenen Überlastschutz und werden bei Überlast von
+selbst `unavailable`, bis sie sich erholt haben und wieder im Zustand "aus"
+verfügbar sind. Das Limit wird stattdessen nur bei der **Planung**
+berücksichtigt: Bevor der Lade-Scheduler eine Steckdose einschaltet, prüft
+er, ob die jeweils andere Steckdose gerade eingeschaltet ist, und falls ja,
+ob deren gemessene Leistung plus die eigene, typische Ladeleistung
+(einstellbarer Schätzwert, Default 2300 W) das Limit überschreiten würde.
+Wenn ja, wird nicht eingeschaltet – der nächste Prüfzyklus (Default alle
+10 min) versucht es erneut, z. B. sobald das andere Fahrzeug fertig geladen
+hat. Eine manuell eingeschaltete Steckdose übersteuert diese Vorsicht
+bewusst (siehe "Manuelles Einschalten").
+
+Kommt es trotzdem zu einer Überlast (z. B. weil beide Steckdosen manuell
+gleichzeitig eingeschaltet wurden oder die tatsächliche Ladeleistung höher
+als geschätzt war), greift der Überlastschutz der Steckdose selbst. Sobald
+sie – laut Home Assistant am Zustandswechsel `unavailable` → `off` erkennbar
+– wieder verfügbar ist, bewertet der jeweilige Lade-Scheduler sofort neu, ob
+wieder eingeschaltet werden soll.
 
 ## Bekannte Vereinfachungen
 
@@ -202,9 +207,14 @@ Lade-Scheduler.
   Wochentags-Zeitplan). Für unterschiedliche Zeiten je Wochentag könnte man
   die generierte Automatisierung um eine `weekday`-Bedingung erweitern oder
   mehrere Instanzen mit Zeitfenster-Bedingungen anlegen.
-- Die Priorisierung beim Stromkreis-Limit berücksichtigt nicht, welches
-  Fahrzeug die knappere Abfahrtszeit hat, sondern pausiert die zuletzt
-  gestartete Ladung.
+- Die Überlast-Vermeidung beim Einschalten arbeitet mit einem geschätzten
+  Wert für die eigene typische Ladeleistung (nicht mit einer live
+  gemessenen eigenen Leistung, die vor dem Einschalten ja noch bei ~0 W
+  liegt). Bei knappen Fällen lieber etwas großzügiger schätzen.
+- Wenn beide Steckdosen gleichzeitig manuell eingeschaltet werden, greift
+  keine Vorab-Prüfung (Manuell übersteuert die Überlast-Vermeidung bewusst)
+  – hier verlässt sich die Lösung vollständig auf den Überlastschutz der
+  Steckdosen selbst.
 - Die "manuell eingeschaltet"-Erkennung basiert auf der Home-Assistant-
   Heuristik "Zustandsänderung ohne automation-Kontext" und ist nicht zu
   100 % robust (z. B. wenn ein Skript ohne eigenen Kontext schaltet).
@@ -221,6 +231,6 @@ packages/
   twizy_charging.yaml            # alle Helper-Entities
 blueprints/automation/twizy/
   socket_assignment.yaml         # innen/außen-Zuordnung
-  charge_scheduler.yaml          # Lade-Entscheidung je Fahrzeug (2x instanziieren)
-  shared_circuit_guard.yaml      # 3kW-Stromkreis-Schutz
+  charge_scheduler.yaml          # Lade-Entscheidung je Fahrzeug (2x instanziieren),
+                                  # inkl. Überlast-Vermeidung bei der Planung
 ```
