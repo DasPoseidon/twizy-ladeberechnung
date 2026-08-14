@@ -13,7 +13,6 @@ Aufgabe braucht aber genau das:
 
 - welches Fahrzeug hängt gerade an welcher Steckdose (ändert sich bei jeder
   Ankunft/Abfahrt),
-- die 1×/Tag gecachten Tibber-Preise,
 - ob gerade manuell übersteuert wurde,
 - ob eine Steckdose wegen des 3‑kW-Limits pausiert ist,
 - der aktuell berechnete Ladeplan.
@@ -26,12 +25,12 @@ jeder Kleinigkeit alle anderen Teile mit anfassen.
 
 1. Ein kleines **Helper-Paket** (`packages/twizy_charging.yaml`) legt alle
    `input_*`-Entities an, die den Zustand halten.
-2. Vier fokussierte, wiederverwendbare **Blueprints**
+2. Drei fokussierte, wiederverwendbare **Blueprints**
    (`blueprints/automation/twizy/`), die jeweils eine klar abgegrenzte
    Verantwortung haben und über diese Helper miteinander "kommunizieren":
-   - Tibber-Preis-Cache (1×/Tag)
    - Steckdosen-Zuordnung (Ankunft & Platztausch)
-   - Lade-Scheduler (je Fahrzeug einmal instanziiert)
+   - Lade-Scheduler (je Fahrzeug einmal instanziiert; liest die
+     Tibber-Preise direkt aus dem Tibber-Sensor, kein eigener Cache)
    - Gemeinsames Stromkreis-Limit
 
 Das ist die in der Home-Assistant-Community übliche Architektur für
@@ -45,23 +44,19 @@ Bordmitteln (Blueprints + Helpers + Templates) aus.
 ## Architektur-Übersicht
 
 ```
-┌─────────────────────────┐   1×/Tag    ┌──────────────────────────┐
-│ Tibber-Preis-Sensor      │ ──────────▶ │ tibber_price_cache.yaml  │
-│ (offizielle Integration) │             │ (Blueprint)              │
-└─────────────────────────┘             └──────────┬───────────────┘
-                                                     │ schreibt
-                                                     ▼
-                                     input_text.tibber_guenstige_stunden_*
-                                                     │ liest
-                                                     ▼
-┌─────────────────────────┐             ┌──────────────────────────┐
-│ OVMS Standort/Trip       │ ──────────▶ │ socket_assignment.yaml   │
-│ Sensoren                 │             │ (Blueprint)              │
-└─────────────────────────┘             └──────────┬───────────────┘
+┌─────────────────────────┐
+│ OVMS Standort/Trip       │ ──────────▶ ┌──────────────────────────┐
+│ Sensoren                 │             │ socket_assignment.yaml   │
+└─────────────────────────┘             │ (Blueprint)              │
+                                         └──────────┬───────────────┘
                                                      │ schreibt
                                                      ▼
                                  input_select.twizy_socket_{innen,aussen}_belegt_durch
                                                      │ liest
+┌─────────────────────────┐                         │
+│ Tibber-Preis-Sensor      │ ─────────liest──────────┤
+│ (offizielle Integration) │                         │
+└─────────────────────────┘                         │
                         ┌────────────────────────────┴───────────────────────────┐
                         ▼                                                        ▼
         ┌──────────────────────────┐                              ┌──────────────────────────┐
@@ -116,14 +111,13 @@ Bordmitteln (Blueprints + Helpers + Templates) aus.
      als Blueprint-Quelle importieren).
 2. Home Assistant neu laden (YAML-Konfiguration neu laden reicht,
    Neustart nicht zwingend nötig).
-3. Unter **Einstellungen → Automatisierungen → Blueprints** die vier
+3. Unter **Einstellungen → Automatisierungen → Blueprints** die drei
    Blueprints als Automatisierungen anlegen:
 
    | Blueprint | Wie oft anlegen | Wichtige Eingaben |
    |---|---|---|
-   | Tibber-Preise cachen | 1× | Tibber-Sensor |
    | Steckdosen-Zuordnung | 1× | Standort- & Moving-Sensoren beider Fahrzeuge |
-   | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren **des jeweiligen Fahrzeugs**, sowie bei der zweiten Instanz die `twizy_2_*`-Helper statt der `twizy_1_*`-Defaults auswählen |
+   | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren **des jeweiligen Fahrzeugs**, den Tibber-Preis-Sensor, sowie bei der zweiten Instanz die `twizy_2_*`-Helper statt der `twizy_1_*`-Defaults auswählen |
    | Gemeinsames Stromkreis-Limit | 1× | beide Schalter + Leistungssensoren |
 
 4. In den Helpern (`Einstellungen → Geräte & Dienste → Helfer`) die
@@ -133,37 +127,26 @@ Bordmitteln (Blueprints + Helpers + Templates) aus.
 
 ## Verhalten im Detail
 
-### Tibber-Preise cachen (1×/Tag)
-Liest kurz nachdem Tibber die Preise des Folgetags veröffentlicht (Default
-13:05 Uhr) die Preise aus dem Sensor-Attribut, ermittelt die günstigsten N
-Stunden im Cache-Fenster (heute+morgen) und speichert sie kompakt (als
-Unix-Epoch-Stunden, semikolon-getrennt) in `input_text`-Helpern. Alle
-anderen Automatisierungen lesen ausschließlich diese Helper, nicht mehr
-den Tibber-Sensor selbst.
+### Tibber-Preise
+Der Lade-Scheduler liest die Preise bei jedem Prüfzyklus direkt aus den
+`today`/`tomorrow`-Attributen des Tibber-Sensors – kein eigener Cache, kein
+Zwischenspeicher-Helper.
 
-**Klarstellung zur Tibber-API:** Die offizielle Tibber-Integration muss die
-Preise natürlich irgendwann von der echten Tibber-API abrufen – anders geht
-es nicht. Sie tut das aber bereits von sich aus sehr sparsam: Der interne
+Das ist unproblematisch, weil die offizielle Tibber-Integration die
+Tibber-API bereits von sich aus sehr sparsam abfragt: Der interne
 `TibberFetchPriceCoordinator` prüft zwar alle 1–10 Minuten (randomisiert),
 ob neue Daten nötig sind, dieser Check läuft aber rein lokal gegen bereits
-geladene Daten. Ein echter API-Call passiert nur, wenn die Preise für heute
-komplett fehlen, oder wenn die Preise für morgen fehlen und ein
-randomisierter Zeitpunkt zwischen 14:00 und 22:00 Uhr überschritten ist –
-in der Praxis also ungefähr **1× pro Tag**, unabhängig davon, wie oft
-Sensoren gelesen werden (Quelle:
+geladene Daten – kein Netzwerkzugriff. Ein echter API-Call passiert nur,
+wenn die Preise für heute komplett fehlen, oder wenn die Preise für morgen
+fehlen und ein randomisierter Zeitpunkt zwischen 14:00 und 22:00 Uhr
+überschritten ist – in der Praxis also ungefähr **1× pro Tag**, unabhängig
+davon, wie oft Sensoren/Automatisierungen den Sensor lesen (Quelle:
 [`homeassistant/components/tibber/coordinator.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/components/tibber/coordinator.py),
-Klassen `TibberFetchPriceCoordinator`/`TibberPriceCoordinator`).
-
-Das heißt: Der eigentliche Grund, weshalb hier zusätzlich in eigene Helper
-gecacht wird, ist **nicht**, die Tibber-API vor Überlastung zu schützen –
-das erledigt die Integration bereits selbst. Der Nutzen dieses Caches ist,
-dass der Lade-Scheduler eine stabile, kompakte, von Tibbers eigenem
-Update-Zyklus entkoppelte Momentaufnahme bekommt, mit der er unabhängig von
-Sensor-Neuberechnungen (die alle 15 min laufen) rechnen kann – und dass die
-ursprünglich gewünschte "nur 1×/Tag abfragen"-Vorgabe damit auch explizit
-und nachvollziehbar im eigenen Automatisierungs-Code abgebildet ist, statt
-sich implizit auf internes Integrationsverhalten zu verlassen, das sich
-zwischen HA-Versionen ändern könnte.
+Klassen `TibberFetchPriceCoordinator`/`TibberPriceCoordinator`). Der
+Sensorwert, den der Lade-Scheduler liest, ist also ohnehin schon aktuell
+gehalten – ein zusätzlicher eigener Cache hätte hier keinen Vorteil mehr
+geboten, nur zusätzliche Komplexität (eigener Helper, 255-Zeichen-Limit von
+`input_text`, Zeitzonen-Handling für den Referenzzeitpunkt).
 
 ### Steckdosen-Zuordnung
 - Fährt ein Fahrzeug in die `home`-Zone ein, wird es "außen" zugeordnet;
@@ -237,7 +220,6 @@ Lade-Scheduler.
 packages/
   twizy_charging.yaml            # alle Helper-Entities
 blueprints/automation/twizy/
-  tibber_price_cache.yaml        # Preise 1x/Tag cachen
   socket_assignment.yaml         # innen/außen-Zuordnung
   charge_scheduler.yaml          # Lade-Entscheidung je Fahrzeug (2x instanziieren)
   shared_circuit_guard.yaml      # 3kW-Stromkreis-Schutz

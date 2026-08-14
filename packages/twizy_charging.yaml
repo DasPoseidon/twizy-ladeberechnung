@@ -96,14 +96,6 @@ input_datetime:
     initial: "07:00:00"
 
 input_number:
-  tibber_preis_cache_letzter_abruf_epoch:
-    name: "Tibber Preis-Cache – Unix-Zeitstempel des letzten erfolgreichen Abrufs"
-    icon: mdi:cash-clock
-    min: 0
-    max: 9999999999
-    step: 1
-    initial: 0
-
   twizy_1_eigene_ladedauer_minuten:
     name: "Twizy 1 – selbst berechnete Ladedauer"
     icon: mdi:timer-outline
@@ -132,25 +124,11 @@ input_number:
     unit_of_measurement: W
 
 # ---------------------------------------------------------------------------
-# Tibber-Preis-Cache (kompakt, damit das 255-Zeichen-Limit von input_text reicht)
-#
-# Statt aller stündlichen Rohpreise wird nur einmal täglich (Blueprint
-# tibber_price_cache.yaml) eine sortierte Liste der N günstigsten Stunden
-# innerhalb des Cache-Fensters (heute+morgen) abgelegt – als absolute
-# Unix-Epoch-Stunden (epoch_seconds // 3600, zeitzonenunabhängig, daher kein
-# Referenzzeitpunkt-Helper nötig). Alle anderen Automatisierungen lesen NUR
-# diese Helper, nie mehr den Tibber-Sensor/-Service direkt -> es wird
-# tatsächlich nur 1x/Tag "abgefragt".
+# Ladeplan (informativ/Debug) – der Lade-Scheduler liest die Tibber-Preise
+# direkt aus dem Tibber-Sensor (today/tomorrow-Attribute) und legt hier nur
+# das Ergebnis seiner Planung ab, kein eigener Preis-Cache.
 # ---------------------------------------------------------------------------
 input_text:
-  tibber_guenstige_stunden_offsets:
-    name: "Tibber – Epoch-Stunden der günstigsten Stunden (aufsteigend nach Preis, semikolon-separiert)"
-    max: 255
-
-  tibber_guenstige_stunden_preise_ct:
-    name: "Tibber – Preise (ct) zu den Epoch-Stunden oben, gleiche Reihenfolge, semikolon-separiert"
-    max: 255
-
   twizy_1_ladeplan_offsets:
     name: "Twizy 1 – aktuell geplante Lade-Epoch-Stunden (informativ/Debug)"
     max: 255

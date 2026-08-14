@@ -13,9 +13,11 @@ blueprint:
        gepflegter Minutenwert.
     3. Bestimmt die nächste Abfahrtszeit (Deadline) aus dem
        Abfahrtszeit-Helper.
-    4. Wählt anhand des 1x täglich gecachten Tibber-Preisrankings die
-       günstigsten Stunden bis zur Deadline, die in Summe die benötigte
-       Ladedauer abdecken.
+    4. Wählt direkt aus den `today`/`tomorrow`-Attributen des Tibber-Sensors
+       die günstigsten Stunden bis zur Deadline, die in Summe die benötigte
+       Ladedauer abdecken (kein eigener Preis-Cache nötig – die Tibber-
+       Integration hält diese Werte bereits selbst aktuell und fragt die
+       Tibber-API dafür bereits von sich aus nur ca. 1x/Tag ab).
     5. Schaltet die zugeordnete Steckdose in diesen Stunden ein – außer die
        Deadline wird sonst verfehlt, dann wird notfalls sofort weitergeladen
        ("Aufhol-Logik").
@@ -148,12 +150,15 @@ blueprint:
         entity:
           domain: input_boolean
 
-    offsets_helper:
-      name: Helper – Tibber günstige Stunden (Epoch-Stunden)
-      default: input_text.tibber_guenstige_stunden_offsets
+    tibber_price_entity:
+      name: Tibber Strompreis-Sensor
+      description: >
+        Sensor der Tibber-Integration mit den Attributen `today`/`tomorrow`
+        (z. B. sensor.strompreis / sensor.electricity_price_...). Wird
+        direkt gelesen, kein eigener Preis-Cache nötig.
       selector:
         entity:
-          domain: input_text
+          domain: sensor
 
     check_interval:
       name: Prüfintervall
@@ -185,7 +190,7 @@ variables:
   paused_flag_helper: !input paused_flag_helper
   ladeplan_helper: !input ladeplan_helper
   socket_zuordnung_geprueft_helper: !input socket_zuordnung_geprueft_helper
-  offsets_helper: !input offsets_helper
+  tibber_price_entity: !input tibber_price_entity
 
 trigger:
   - platform: time_pattern
@@ -203,9 +208,6 @@ trigger:
     id: periodic
   - platform: state
     entity_id: !input paused_flag_helper
-    id: periodic
-  - platform: state
-    entity_id: !input offsets_helper
     id: periodic
   - platform: state
     entity_id:
@@ -269,14 +271,29 @@ action:
       must_charge_now: "{{ minutes_to_deadline <= (duration_minutes + 5) }}"
       current_epoch_hour: "{{ (now().timestamp() | int) // 3600 }}"
       deadline_epoch_hour: "{{ (deadline.timestamp() | int) // 3600 }}"
-      cheap_epoch_hours: >
-        {% set raw = states(offsets_helper) %}
-        {% set body = raw[1:] if (raw not in ['unknown', 'unavailable', ''] and raw.startswith('h')) else '' %}
-        {{ (body.split(';') | map('int') | list) if body else [] }}
+      # Preise direkt aus dem Tibber-Sensor lesen (kein eigener Cache nötig -
+      # die Tibber-Integration hält today/tomorrow bereits aktuell und ruft
+      # die Tibber-API dafür selbst nur ca. 1x/Tag ab).
+      price_entries: >
+        {% set ns = namespace(items=[]) %}
+        {% set raw_today = state_attr(tibber_price_entity, 'today') | default([], true) %}
+        {% set raw_tomorrow = state_attr(tibber_price_entity, 'tomorrow') | default([], true) %}
+        {% for e in raw_today + raw_tomorrow %}
+          {% set price = e.total if e.total is defined else e.value %}
+          {% if price is not none and e.start is defined %}
+            {% set eh = (as_datetime(e.start).timestamp() | int) // 3600 %}
+            {% set ns.items = ns.items + [{'epoch_hour': eh, 'price': price}] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
       needed_slots: "{{ [((duration_minutes / 60) | round(0, 'ceil') | int), 1] | max }}"
-      future_cheap_epoch_hours: >
-        {{ cheap_epoch_hours | select('ge', current_epoch_hour) | select('le', deadline_epoch_hour) | sort | list }}
-      plan_offsets: "{{ future_cheap_epoch_hours[:needed_slots] }}"
+      cheapest_in_window: >
+        {{ (price_entries
+            | selectattr('epoch_hour', 'ge', current_epoch_hour)
+            | selectattr('epoch_hour', 'le', deadline_epoch_hour)
+            | list
+            | sort(attribute='price'))[:needed_slots | int] }}
+      plan_offsets: "{{ cheapest_in_window | map(attribute='epoch_hour') | list | sort }}"
       should_charge_price: "{{ current_epoch_hour in plan_offsets }}"
       should_charge_now: "{{ (not is_full) and (not is_paused) and (is_manual or should_charge_price or must_charge_now) }}"
 
