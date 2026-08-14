@@ -69,17 +69,97 @@ input_boolean:
 
 # ---------------------------------------------------------------------------
 # Zeitpläne / Sollwerte
+#
+# Abfahrtszeit ist pro Wochentag einzeln einstellbar (7 Helper je Fahrzeug).
+# Ein HA-"schedule"-Helper wäre hier ungeeignet: dessen next_event-Attribut
+# zeigt außerhalb des aktuellen Zeitfensters nur den Beginn des nächsten
+# Fensters (z.B. Mitternacht), nicht die eigentliche Abfahrtszeit des
+# nächsten Tages - der Lade-Scheduler braucht aber jederzeit (auch nachts)
+# die tatsächliche nächste Abfahrtszeit, um das Preisfenster korrekt zu
+# berechnen.
 # ---------------------------------------------------------------------------
 input_datetime:
-  twizy_1_abfahrtszeit:
-    name: "Twizy 1 – geplante Abfahrtszeit (Auto soll dann voll sein)"
+  twizy_1_abfahrtszeit_montag:
+    name: "Twizy 1 – Abfahrtszeit Montag"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+  twizy_1_abfahrtszeit_dienstag:
+    name: "Twizy 1 – Abfahrtszeit Dienstag"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+  twizy_1_abfahrtszeit_mittwoch:
+    name: "Twizy 1 – Abfahrtszeit Mittwoch"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+  twizy_1_abfahrtszeit_donnerstag:
+    name: "Twizy 1 – Abfahrtszeit Donnerstag"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+  twizy_1_abfahrtszeit_freitag:
+    name: "Twizy 1 – Abfahrtszeit Freitag"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+  twizy_1_abfahrtszeit_samstag:
+    name: "Twizy 1 – Abfahrtszeit Samstag"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+  twizy_1_abfahrtszeit_sonntag:
+    name: "Twizy 1 – Abfahrtszeit Sonntag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
     initial: "07:00:00"
 
-  twizy_2_abfahrtszeit:
-    name: "Twizy 2 – geplante Abfahrtszeit (Auto soll dann voll sein)"
+  twizy_2_abfahrtszeit_montag:
+    name: "Twizy 2 – Abfahrtszeit Montag"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+  twizy_2_abfahrtszeit_dienstag:
+    name: "Twizy 2 – Abfahrtszeit Dienstag"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+  twizy_2_abfahrtszeit_mittwoch:
+    name: "Twizy 2 – Abfahrtszeit Mittwoch"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+  twizy_2_abfahrtszeit_donnerstag:
+    name: "Twizy 2 – Abfahrtszeit Donnerstag"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+  twizy_2_abfahrtszeit_freitag:
+    name: "Twizy 2 – Abfahrtszeit Freitag"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+  twizy_2_abfahrtszeit_samstag:
+    name: "Twizy 2 – Abfahrtszeit Samstag"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+  twizy_2_abfahrtszeit_sonntag:
+    name: "Twizy 2 – Abfahrtszeit Sonntag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true

@@ -118,10 +118,28 @@ Leistungssensor der jeweils anderen Steckdose.
    | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren **des jeweiligen Fahrzeugs**, beide Schalter + beide Leistungssensoren, sowie bei der zweiten Instanz die `twizy_2_*`-Helper statt der `twizy_1_*`-Defaults auswählen |
 
 4. In den Helpern (`Einstellungen → Geräte & Dienste → Helfer`) die
-   Abfahrtszeiten (`twizy_1_abfahrtszeit`, `twizy_2_abfahrtszeit`) und bei
+   Abfahrtszeiten pro Wochentag (`twizy_{1,2}_abfahrtszeit_montag` …
+   `twizy_{1,2}_abfahrtszeit_sonntag`, je 7 Helper pro Fahrzeug) und bei
    Bedarf das Stromkreis-Limit (`twizy_max_gesamtleistung_watt`, Default
    3000 W) sowie die Mindest-Einschaltzeit pro Tag
-   (`twizy_{1,2}_mindestlaufzeit_minuten`, Default 30 min) anpassen.
+   (`twizy_{1,2}_mindestlaufzeit_minuten`, Default 30 min) anpassen. Am
+   einfachsten geht das über das Dashboard (nächster Schritt).
+5. Optional, aber empfohlen: `dashboards/twizy_dashboard.yaml` als eigenes
+   Dashboard einbinden, damit alle Helper (Abfahrtszeiten, Ladedauer,
+   Steckdosen-Zuordnung, Debug-Werte) an einem Ort bedienbar sind, ohne sie
+   einzeln aus der Helfer-Liste heraussuchen zu müssen:
+   1. **Einstellungen → Dashboards → "+ Dashboard hinzufügen"** →
+      "Neues Dashboard von Grund auf erstellen" (beliebiger Titel, z. B.
+      "Twizy").
+   2. Das neue Dashboard öffnen, oben rechts **⋮ → Dashboard bearbeiten**,
+      dann nochmal **⋮ → Raw-Konfigurationseditor**.
+   3. Den kompletten Inhalt von `dashboards/twizy_dashboard.yaml` einfügen
+      (vorhandenen Inhalt ersetzen) und speichern.
+
+   Das Dashboard nutzt ausschließlich eingebaute Lovelace-Karten
+   (`entities`-Karten) – keine HACS-Zusatzkarten nötig. Falls du
+   Helper-Namen im Paket änderst, müssen die `entity:`-Zeilen in der
+   Dashboard-Datei entsprechend angepasst werden.
 
 ## Verhalten im Detail
 
@@ -179,17 +197,30 @@ nächste Prüfzyklus versucht es automatisch erneut, bis entweder die
 Zuordnung korrigiert wurde oder tatsächlich geladen wird.
 
 ### Preisoptimiertes Laden & Abfahrtszeit
-Für jedes Fahrzeug wird pro Prüfzyklus (Default alle 10 min) berechnet:
+Die Abfahrtszeit ist **pro Wochentag einzeln einstellbar** (7 Helper je
+Fahrzeug, `twizy_{1,2}_abfahrtszeit_montag` … `_sonntag`). Für jedes
+Fahrzeug wird pro Prüfzyklus (Default alle 10 min) berechnet:
+- die Deadline: die Abfahrtszeit des heutigen Wochentags – ist die schon
+  verstrichen, die des morgigen Wochentags (der einen anderen Wert haben
+  kann als heute).
 - benötigte Ladedauer: standardmäßig die von OVMS geschätzte Restzeit bis
   voll; per Schalter-Helper (`twizy_{1,2}_eigene_ladedauer_verwenden`) auf
   einen selbst gepflegten Minutenwert (`twizy_{1,2}_eigene_ladedauer_minuten`)
   umschaltbar – vorbereitet für eine spätere eigene Berechnung.
-- ob die aktuelle Stunde zu den günstigsten Stunden vor der Abfahrtszeit
+- ob die aktuelle Stunde zu den günstigsten Stunden vor der Deadline
   gehört, die in Summe die Ladedauer abdecken.
 - eine **Aufhol-Logik**: reicht die verbleibende Zeit bis zur Abfahrt nicht
   mehr aus, um die benötigte Dauer allein aus günstigen Stunden zu decken,
   wird unabhängig vom Preis sofort weiter geladen, damit die Deadline nicht
   gerissen wird.
+
+**Warum kein `schedule`-Helper?** Ein `schedule`-Helper wäre naheliegend,
+hat hier aber einen Haken: Sein `next_event`-Attribut zeigt außerhalb des
+aktuellen Zeitfensters nur den *Beginn* des nächsten Fensters (z. B.
+Mitternacht), nicht die eigentliche Abfahrtszeit des nächsten Tages. Der
+Lade-Scheduler braucht aber jederzeit (auch nachts) die tatsächliche
+nächste Abfahrtszeit, um das Preisfenster korrekt zu berechnen – dafür
+sind die 7 separaten `input_datetime`-Helper direkter nutzbar.
 
 ### Laden abgeschlossen & Mindest-Einschaltzeit pro Tag
 Ist der SoC-Schwellwert erreicht, wird die Steckdose abgeschaltet – so weit
@@ -240,10 +271,6 @@ wieder eingeschaltet werden soll.
 
 ## Bekannte Vereinfachungen
 
-- Die Abfahrtszeit ist ein einzelner täglicher Zeitpunkt (kein
-  Wochentags-Zeitplan). Für unterschiedliche Zeiten je Wochentag könnte man
-  die generierte Automatisierung um eine `weekday`-Bedingung erweitern oder
-  mehrere Instanzen mit Zeitfenster-Bedingungen anlegen.
 - Die Überlast-Vermeidung beim Einschalten arbeitet mit einem geschätzten
   Wert für die eigene typische Ladeleistung (nicht mit einer live
   gemessenen eigenen Leistung, die vor dem Einschalten ja noch bei ~0 W
@@ -276,4 +303,6 @@ blueprints/automation/twizy/
   socket_assignment.yaml         # innen/außen-Zuordnung
   charge_scheduler.yaml          # Lade-Entscheidung je Fahrzeug (2x instanziieren),
                                   # inkl. Überlast-Vermeidung bei der Planung
+dashboards/
+  twizy_dashboard.yaml           # fertiges Dashboard (nur eingebaute Karten)
 ```

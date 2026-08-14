@@ -12,7 +12,9 @@ blueprint:
        geschätzte Restzeit bis voll, alternativ (Schalter-Helper) ein selbst
        gepflegter Minutenwert.
     3. Bestimmt die nächste Abfahrtszeit (Deadline) aus dem
-       Abfahrtszeit-Helper.
+       Abfahrtszeit-Helper des aktuellen bzw. (falls die heutige Zeit schon
+       verstrichen ist) des morgigen Wochentags – für jeden Wochentag ist
+       eine eigene Abfahrtszeit einstellbar.
     4. Ruft den Service `tibber.get_prices` auf (liefert Stundenpreise für
        heute+morgen als Service-Response, kein eigener Preis-Cache nötig)
        und wählt daraus die günstigsten Stunden bis zur Deadline, die in
@@ -182,9 +184,51 @@ blueprint:
       selector:
         duration: {}
 
-    departure_time_helper:
-      name: Helper – Abfahrtszeit dieses Fahrzeugs
-      default: input_datetime.twizy_1_abfahrtszeit
+    departure_time_monday_helper:
+      name: Helper – Abfahrtszeit Montag
+      default: input_datetime.twizy_1_abfahrtszeit_montag
+      selector:
+        entity:
+          domain: input_datetime
+
+    departure_time_tuesday_helper:
+      name: Helper – Abfahrtszeit Dienstag
+      default: input_datetime.twizy_1_abfahrtszeit_dienstag
+      selector:
+        entity:
+          domain: input_datetime
+
+    departure_time_wednesday_helper:
+      name: Helper – Abfahrtszeit Mittwoch
+      default: input_datetime.twizy_1_abfahrtszeit_mittwoch
+      selector:
+        entity:
+          domain: input_datetime
+
+    departure_time_thursday_helper:
+      name: Helper – Abfahrtszeit Donnerstag
+      default: input_datetime.twizy_1_abfahrtszeit_donnerstag
+      selector:
+        entity:
+          domain: input_datetime
+
+    departure_time_friday_helper:
+      name: Helper – Abfahrtszeit Freitag
+      default: input_datetime.twizy_1_abfahrtszeit_freitag
+      selector:
+        entity:
+          domain: input_datetime
+
+    departure_time_saturday_helper:
+      name: Helper – Abfahrtszeit Samstag
+      default: input_datetime.twizy_1_abfahrtszeit_samstag
+      selector:
+        entity:
+          domain: input_datetime
+
+    departure_time_sunday_helper:
+      name: Helper – Abfahrtszeit Sonntag
+      default: input_datetime.twizy_1_abfahrtszeit_sonntag
       selector:
         entity:
           domain: input_datetime
@@ -279,7 +323,19 @@ variables:
   charge_state_sensor: !input charge_state_sensor
   charging_state_values: !input charging_state_values
   verification_grace_period: !input verification_grace_period
-  departure_time_helper: !input departure_time_helper
+  departure_time_monday_helper: !input departure_time_monday_helper
+  departure_time_tuesday_helper: !input departure_time_tuesday_helper
+  departure_time_wednesday_helper: !input departure_time_wednesday_helper
+  departure_time_thursday_helper: !input departure_time_thursday_helper
+  departure_time_friday_helper: !input departure_time_friday_helper
+  departure_time_saturday_helper: !input departure_time_saturday_helper
+  departure_time_sunday_helper: !input departure_time_sunday_helper
+  # Reihenfolge passend zu Python/Jinja now().weekday(): 0=Montag..6=Sonntag.
+  departure_time_weekday_helpers: >-
+    {{ [departure_time_monday_helper, departure_time_tuesday_helper,
+        departure_time_wednesday_helper, departure_time_thursday_helper,
+        departure_time_friday_helper, departure_time_saturday_helper,
+        departure_time_sunday_helper] }}
   use_custom_duration_helper: !input use_custom_duration_helper
   custom_duration_helper: !input custom_duration_helper
   manual_flag_helper: !input manual_flag_helper
@@ -295,7 +351,14 @@ trigger:
     id: periodic
   # ^ check_interval ist ein Wildcard-String wie "/10" ("alle 10 Minuten")
   - platform: state
-    entity_id: !input departure_time_helper
+    entity_id:
+      - !input departure_time_monday_helper
+      - !input departure_time_tuesday_helper
+      - !input departure_time_wednesday_helper
+      - !input departure_time_thursday_helper
+      - !input departure_time_friday_helper
+      - !input departure_time_saturday_helper
+      - !input departure_time_sunday_helper
     id: periodic
   - platform: state
     entity_id: !input use_custom_duration_helper
@@ -408,9 +471,17 @@ action:
   - variables:
       ovms_etr_val: "{{ states(etr_full_sensor) }}"
       duration_minutes: "{{ (states(custom_duration_helper) | float(120)) if (is_state(use_custom_duration_helper, 'on') or ovms_etr_val in ['unknown', 'unavailable', 'none', '']) else (ovms_etr_val | float(120)) }}"
-      dep_time_state: "{{ states(departure_time_helper) }}"
-      dep_today: "{{ now().replace(hour=(dep_time_state.split(':')[0] | int), minute=(dep_time_state.split(':')[1] | int), second=0, microsecond=0) }}"
-      deadline: "{{ dep_today if dep_today > now() else dep_today + timedelta(days=1) }}"
+      # Abfahrtszeit ist pro Wochentag einstellbar: den Helper des heutigen
+      # Wochentags nehmen; ist die heutige Zeit schon verstrichen, den
+      # Helper des morgigen Wochentags (kann einen anderen Wert haben als
+      # heute).
+      dep_time_state_today: "{{ states(departure_time_weekday_helpers[now().weekday()]) }}"
+      dep_today: "{{ now().replace(hour=(dep_time_state_today.split(':')[0] | int), minute=(dep_time_state_today.split(':')[1] | int), second=0, microsecond=0) }}"
+      dep_time_state_tomorrow: "{{ states(departure_time_weekday_helpers[(now().weekday() + 1) % 7]) }}"
+      dep_tomorrow: >-
+        {{ (now() + timedelta(days=1)).replace(hour=(dep_time_state_tomorrow.split(':')[0] | int),
+           minute=(dep_time_state_tomorrow.split(':')[1] | int), second=0, microsecond=0) }}
+      deadline: "{{ dep_today if dep_today > now() else dep_tomorrow }}"
       soc: "{{ states(soc_sensor) | float(0) }}"
       is_full: "{{ soc >= (soc_full_threshold | float) }}"
       is_manual: "{{ is_state(manual_flag_helper, 'on') }}"
