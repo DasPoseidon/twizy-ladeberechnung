@@ -1,0 +1,148 @@
+blueprint:
+  name: "Twizy: Tibber-Preise cachen (1x täglich)"
+  description: >
+    Liest die stündlichen Tibber-Preise (heute + morgen, sobald verfügbar)
+    genau einmal täglich aus dem Tibber-Sensor der offiziellen Integration
+    und speichert nur eine kompakte, sortierte Liste der günstigsten Stunden
+    in den input_text-Helpern des `twizy_charging`-Pakets ab – als absolute
+    Unix-Epoch-Stunden, damit keine Zeitzonen-Umrechnung nötig ist.
+
+    Alle anderen Twizy-Automatisierungen (Lade-Scheduler) lesen ausschließlich
+    diese gecachten Helper und fragen nie zwischendurch erneut den
+    Tibber-Sensor oder -Service ab. So wird sichergestellt, dass die
+    Preis-"API" (der Sensorwert der Tibber-Integration) wirklich nur einmal
+    pro Tag ausgewertet wird, unabhängig davon, wie oft der Scheduler danach
+    entscheidet.
+
+    Empfehlung: Ausführungszeit auf kurz nach 13:00 Uhr legen, da Tibber die
+    Preise des Folgetags i. d. R. ab 13:00 Uhr veröffentlicht.
+  domain: automation
+  source_url: https://github.com/DasPoseidon/twizy-ladeberechnung/blob/main/blueprints/automation/twizy/tibber_price_cache.yaml
+  input:
+    tibber_price_entity:
+      name: Tibber Strompreis-Sensor
+      description: >
+        Sensor der Tibber-Integration mit den Attributen `today`/`tomorrow`
+        (z. B. sensor.strompreis / sensor.electricity_price_...).
+      selector:
+        entity:
+          domain: sensor
+
+    cache_time:
+      name: Uhrzeit des täglichen Abrufs
+      description: Wann die Preise einmal täglich gelesen und gecacht werden.
+      default: "13:05:00"
+      selector:
+        time: {}
+
+    top_n_hours:
+      name: Anzahl zu merkender günstiger Stunden
+      description: >
+        Wie viele der günstigsten Stunden aus dem Cache-Fenster
+        (heute+morgen) gemerkt werden sollen. Muss mindestens der maximal
+        realistischen Ladedauer (in vollen Stunden) beider Fahrzeuge
+        zusammen entsprechen. Bei zu hohen Werten wird ggf. am
+        255-Zeichen-Limit des input_text-Helpers gekappt.
+      default: 20
+      selector:
+        number:
+          min: 4
+          max: 30
+          step: 1
+
+    last_fetch_helper:
+      name: Helper – Zeitstempel des letzten Abrufs
+      default: input_number.tibber_preis_cache_letzter_abruf_epoch
+      selector:
+        entity:
+          domain: input_number
+
+    offsets_helper:
+      name: Helper – günstige Stunden (Epoch-Stunden)
+      default: input_text.tibber_guenstige_stunden_offsets
+      selector:
+        entity:
+          domain: input_text
+
+    prices_helper:
+      name: Helper – Preise zu den Epoch-Stunden
+      default: input_text.tibber_guenstige_stunden_preise_ct
+      selector:
+        entity:
+          domain: input_text
+
+variables:
+  tibber_price_entity: !input tibber_price_entity
+  top_n_hours: !input top_n_hours
+  last_fetch_helper: !input last_fetch_helper
+  offsets_helper: !input offsets_helper
+  prices_helper: !input prices_helper
+
+trigger:
+  - platform: time
+    at: !input cache_time
+    id: scheduled
+  - platform: homeassistant
+    event: start
+    id: restart
+
+condition:
+  - condition: or
+    conditions:
+      - condition: trigger
+        id: scheduled
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: restart
+          - condition: template
+            value_template: >
+              {{ (now().timestamp() - (states(last_fetch_helper) | float(0))) > 20 * 3600 }}
+
+action:
+  - variables:
+      raw_today: "{{ state_attr(tibber_price_entity, 'today') | default([], true) }}"
+      raw_tomorrow: "{{ state_attr(tibber_price_entity, 'tomorrow') | default([], true) }}"
+      all_entries: "{{ raw_today + raw_tomorrow }}"
+      entries_with_epoch_hour: >
+        {% set ns = namespace(items=[]) %}
+        {% for e in all_entries %}
+          {% set price = e.total if e.total is defined else e.value %}
+          {% if price is not none and e.start is defined %}
+            {% set eh = (as_datetime(e.start).timestamp() | int) // 3600 %}
+            {% if eh >= (now().timestamp() | int) // 3600 %}
+              {% set ns.items = ns.items + [{'epoch_hour': eh, 'price': price}] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+      sorted_cheap: >
+        {{ (entries_with_epoch_hour | sort(attribute='price') | list)[:top_n_hours | int] }}
+      # "h"-Präfix erzwingt, dass Home Assistants automatische
+      # Literal-Erkennung (z.B. eine einzelne Zahl würde sonst als int statt
+      # als String gespeichert) das Ergebnis niemals als Zahl/Tupel
+      # fehlinterpretiert - es bleibt garantiert ein String.
+      offsets_csv: "{{ 'h' ~ (sorted_cheap | map(attribute='epoch_hour') | map('string') | join(';')) }}"
+      prices_csv: >
+        {% set ns2 = namespace(parts=[]) %}
+        {% for item in sorted_cheap %}
+          {% set ns2.parts = ns2.parts + [ ((item.price | float) * 100) | round(0) | int | string ] %}
+        {% endfor %}
+        {{ 'h' ~ (ns2.parts | join(';')) }}
+  - service: input_number.set_value
+    target:
+      entity_id: "{{ last_fetch_helper }}"
+    data:
+      value: "{{ now().timestamp() | int }}"
+  - service: input_text.set_value
+    target:
+      entity_id: "{{ offsets_helper }}"
+    data:
+      value: "{{ (offsets_csv | string)[:255] }}"
+  - service: input_text.set_value
+    target:
+      entity_id: "{{ prices_helper }}"
+    data:
+      value: "{{ (prices_csv | string)[:255] }}"
+
+mode: single

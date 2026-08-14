@@ -1,0 +1,198 @@
+blueprint:
+  name: "Twizy: Steckdosen-Zuordnung (Ankunft & Platztausch)"
+  description: >
+    Pflegt die beiden input_select-Helper, die festhalten, welcher Twizy
+    aktuell an der Steckdose "innen" bzw. "außen" hängt.
+
+    Regel 1 – Ankunft: Fährt ein Fahrzeug in die "home"-Zone ein, wird es der
+    Steckdose "außen" zugeordnet. War das jeweils andere Fahrzeug zu diesem
+    Zeitpunkt bereits zuhause, wird es automatisch auf "innen" zurückgestuft.
+    Da diese Regel bei jeder Ankunft neu angewendet wird, landet immer genau
+    das zuletzt angekommene Fahrzeug auf "außen" – unabhängig von der
+    Reihenfolge.
+
+    Regel 2 – Platztausch ohne Wegfahren: Bewegen sich beide Fahrzeuge kurz
+    (laut "Fährt gerade"-Sensor der OVMS-Integration), ohne dass die
+    "home"-Zone verlassen wird, und enden beide Fahrten innerhalb des
+    gewählten Zeitfensters, wird angenommen, dass die Fahrzeuge die
+    Steckdosen getauscht haben – die Zuordnung wird vertauscht.
+
+    Hinweis: Die tatsächliche Verifikation "hängt das erwartete Fahrzeug auch
+    wirklich am erwarteten Kabel" erfolgt nicht hier, sondern zu Ladebeginn im
+    Blueprint "Twizy: Lade-Scheduler" (dort wird der Ladekabel-Sensor jedes
+    Fahrzeugs geprüft, bevor die zugeordnete Steckdose eingeschaltet wird).
+  domain: automation
+  source_url: https://github.com/DasPoseidon/twizy-ladeberechnung/blob/main/blueprints/automation/twizy/socket_assignment.yaml
+  input:
+    twizy_1_location:
+      name: "Twizy 1 – Standort-Entität"
+      description: device_tracker/Zone-Sensor der OVMS-Integration (Zustand "home"/"not_home").
+      selector:
+        entity:
+          domain: [device_tracker, sensor]
+
+    twizy_2_location:
+      name: "Twizy 2 – Standort-Entität"
+      selector:
+        entity:
+          domain: [device_tracker, sensor]
+
+    twizy_1_moving_sensor:
+      name: "Twizy 1 – 'Fährt gerade' Sensor"
+      description: >
+        binary_sensor der OVMS-Integration, der anzeigt, dass sich das
+        Fahrzeug gerade bewegt (z. B. Moving/Trip-Sensor).
+      selector:
+        entity:
+          domain: binary_sensor
+
+    twizy_2_moving_sensor:
+      name: "Twizy 2 – 'Fährt gerade' Sensor"
+      selector:
+        entity:
+          domain: binary_sensor
+
+    short_trip_window:
+      name: "Zeitfenster für Platztausch-Erkennung"
+      description: >
+        Maximaler Abstand zwischen dem Ende der beiden kurzen Fahrten, damit
+        dies noch als gemeinsamer Platztausch gewertet wird.
+      default:
+        minutes: 15
+      selector:
+        duration: {}
+
+    innen_socket_helper:
+      name: Helper – Steckdose "innen" belegt durch
+      default: input_select.twizy_socket_innen_belegt_durch
+      selector:
+        entity:
+          domain: input_select
+
+    aussen_socket_helper:
+      name: Helper – Steckdose "außen" belegt durch
+      default: input_select.twizy_socket_aussen_belegt_durch
+      selector:
+        entity:
+          domain: input_select
+
+variables:
+  twizy_1_location: !input twizy_1_location
+  twizy_2_location: !input twizy_2_location
+  twizy_1_moving_sensor: !input twizy_1_moving_sensor
+  twizy_2_moving_sensor: !input twizy_2_moving_sensor
+  short_trip_window: !input short_trip_window
+  innen_socket_helper: !input innen_socket_helper
+  aussen_socket_helper: !input aussen_socket_helper
+
+trigger:
+  - platform: state
+    entity_id: !input twizy_1_location
+    to: "home"
+    id: arrival_1
+  - platform: state
+    entity_id: !input twizy_2_location
+    to: "home"
+    id: arrival_2
+  - platform: state
+    entity_id: !input twizy_1_moving_sensor
+    from: "on"
+    to: "off"
+    id: trip_end_1
+  - platform: state
+    entity_id: !input twizy_2_moving_sensor
+    from: "on"
+    to: "off"
+    id: trip_end_2
+
+action:
+  - choose:
+      # --- Regel 1: Ankunft ---
+      - conditions:
+          - condition: trigger
+            id: arrival_1
+        sequence:
+          - service: input_select.select_option
+            target:
+              entity_id: !input aussen_socket_helper
+            data:
+              option: "twizy_1"
+          - if:
+              - condition: state
+                entity_id: !input twizy_2_location
+                state: "home"
+            then:
+              - service: input_select.select_option
+                target:
+                  entity_id: !input innen_socket_helper
+                data:
+                  option: "twizy_2"
+
+      - conditions:
+          - condition: trigger
+            id: arrival_2
+        sequence:
+          - service: input_select.select_option
+            target:
+              entity_id: !input aussen_socket_helper
+            data:
+              option: "twizy_2"
+          - if:
+              - condition: state
+                entity_id: !input twizy_1_location
+                state: "home"
+            then:
+              - service: input_select.select_option
+                target:
+                  entity_id: !input innen_socket_helper
+                data:
+                  option: "twizy_1"
+
+      # --- Regel 2: kurze Fahrt beider Fahrzeuge = Platztausch ---
+      - conditions:
+          - condition: trigger
+            id: trip_end_1
+          - condition: state
+            entity_id: !input twizy_1_location
+            state: "home"
+          - condition: state
+            entity_id: !input twizy_2_location
+            state: "home"
+          - condition: template
+            value_template: >
+              {{ states(twizy_2_moving_sensor) == 'off' and
+                 (now() - states[twizy_2_moving_sensor].last_changed).total_seconds()
+                 <= timedelta(**short_trip_window).total_seconds() }}
+        sequence: &swap
+          - variables:
+              current_innen: "{{ states(innen_socket_helper) }}"
+              current_aussen: "{{ states(aussen_socket_helper) }}"
+          - service: input_select.select_option
+            target:
+              entity_id: !input innen_socket_helper
+            data:
+              option: "{{ current_aussen }}"
+          - service: input_select.select_option
+            target:
+              entity_id: !input aussen_socket_helper
+            data:
+              option: "{{ current_innen }}"
+
+      - conditions:
+          - condition: trigger
+            id: trip_end_2
+          - condition: state
+            entity_id: !input twizy_1_location
+            state: "home"
+          - condition: state
+            entity_id: !input twizy_2_location
+            state: "home"
+          - condition: template
+            value_template: >
+              {{ states(twizy_1_moving_sensor) == 'off' and
+                 (now() - states[twizy_1_moving_sensor].last_changed).total_seconds()
+                 <= timedelta(**short_trip_window).total_seconds() }}
+        sequence: *swap
+
+mode: queued
+max: 10

@@ -1,0 +1,160 @@
+# Twizy Ladeberechnung – Helper-Paket
+#
+# Dieses Paket legt alle Helper-Entities an, die den Zustand der Ladesteuerung
+# zwischen den einzelnen Automatisierungen (Blueprints in blueprints/automation/twizy/)
+# persistent halten. Blueprints selbst können keinen eigenen Zustand speichern,
+# deshalb übernehmen diese Helper die Rolle des "Gedächtnisses".
+#
+# Einbinden in configuration.yaml:
+#
+#   homeassistant:
+#     packages: !include_dir_named packages
+#
+# oder gezielt:
+#
+#   homeassistant:
+#     packages:
+#       twizy_charging: !include packages/twizy_charging.yaml
+
+# ---------------------------------------------------------------------------
+# Steckdosen-Zuordnung: welches Fahrzeug hängt aktuell an "innen"/"außen"
+# ---------------------------------------------------------------------------
+input_select:
+  twizy_socket_innen_belegt_durch:
+    name: "Twizy Steckdose Innen – belegt durch"
+    icon: mdi:ev-plug-type2
+    options:
+      - "twizy_1"
+      - "twizy_2"
+      - "unbekannt"
+    initial: "unbekannt"
+
+  twizy_socket_aussen_belegt_durch:
+    name: "Twizy Steckdose Außen – belegt durch"
+    icon: mdi:ev-plug-type2
+    options:
+      - "twizy_1"
+      - "twizy_2"
+      - "unbekannt"
+    initial: "unbekannt"
+
+# ---------------------------------------------------------------------------
+# Status-Flags
+# ---------------------------------------------------------------------------
+input_boolean:
+  twizy_socket_zuordnung_geprueft:
+    name: "Twizy Steckdosenzuordnung zu Ladebeginn verifiziert"
+    icon: mdi:check-decagram
+    initial: false
+
+  twizy_1_manuelles_laden:
+    name: "Twizy 1 – manuell gestartetes Laden aktiv"
+    icon: mdi:hand-back-right
+    initial: false
+
+  twizy_2_manuelles_laden:
+    name: "Twizy 2 – manuell gestartetes Laden aktiv"
+    icon: mdi:hand-back-right
+    initial: false
+
+  twizy_1_leistungsbedingt_pausiert:
+    name: "Twizy 1 – wegen 3kW-Stromkreis-Limit pausiert"
+    icon: mdi:pause-circle
+    initial: false
+
+  twizy_2_leistungsbedingt_pausiert:
+    name: "Twizy 2 – wegen 3kW-Stromkreis-Limit pausiert"
+    icon: mdi:pause-circle
+    initial: false
+
+  twizy_1_eigene_ladedauer_verwenden:
+    name: "Twizy 1 – selbst berechnete Ladedauer statt OVMS-Schätzung verwenden"
+    icon: mdi:calculator
+    initial: false
+
+  twizy_2_eigene_ladedauer_verwenden:
+    name: "Twizy 2 – selbst berechnete Ladedauer statt OVMS-Schätzung verwenden"
+    icon: mdi:calculator
+    initial: false
+
+# ---------------------------------------------------------------------------
+# Zeitpläne / Sollwerte
+# ---------------------------------------------------------------------------
+input_datetime:
+  twizy_1_abfahrtszeit:
+    name: "Twizy 1 – geplante Abfahrtszeit (Auto soll dann voll sein)"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+
+  twizy_2_abfahrtszeit:
+    name: "Twizy 2 – geplante Abfahrtszeit (Auto soll dann voll sein)"
+    icon: mdi:clock-time-seven
+    has_date: false
+    has_time: true
+    initial: "07:00:00"
+
+input_number:
+  tibber_preis_cache_letzter_abruf_epoch:
+    name: "Tibber Preis-Cache – Unix-Zeitstempel des letzten erfolgreichen Abrufs"
+    icon: mdi:cash-clock
+    min: 0
+    max: 9999999999
+    step: 1
+    initial: 0
+
+  twizy_1_eigene_ladedauer_minuten:
+    name: "Twizy 1 – selbst berechnete Ladedauer"
+    icon: mdi:timer-outline
+    min: 0
+    max: 600
+    step: 5
+    initial: 120
+    unit_of_measurement: min
+
+  twizy_2_eigene_ladedauer_minuten:
+    name: "Twizy 2 – selbst berechnete Ladedauer"
+    icon: mdi:timer-outline
+    min: 0
+    max: 600
+    step: 5
+    initial: 120
+    unit_of_measurement: min
+
+  twizy_max_gesamtleistung_watt:
+    name: "Twizy gemeinsamer Stromkreis – maximale Gesamtleistung"
+    icon: mdi:flash-alert
+    min: 500
+    max: 5000
+    step: 50
+    initial: 3000
+    unit_of_measurement: W
+
+# ---------------------------------------------------------------------------
+# Tibber-Preis-Cache (kompakt, damit das 255-Zeichen-Limit von input_text reicht)
+#
+# Statt aller stündlichen Rohpreise wird nur einmal täglich (Blueprint
+# tibber_price_cache.yaml) eine sortierte Liste der N günstigsten Stunden
+# innerhalb des Cache-Fensters (heute+morgen) abgelegt – als absolute
+# Unix-Epoch-Stunden (epoch_seconds // 3600, zeitzonenunabhängig, daher kein
+# Referenzzeitpunkt-Helper nötig). Alle anderen Automatisierungen lesen NUR
+# diese Helper, nie mehr den Tibber-Sensor/-Service direkt -> es wird
+# tatsächlich nur 1x/Tag "abgefragt".
+# ---------------------------------------------------------------------------
+input_text:
+  tibber_guenstige_stunden_offsets:
+    name: "Tibber – Epoch-Stunden der günstigsten Stunden (aufsteigend nach Preis, semikolon-separiert)"
+    max: 255
+
+  tibber_guenstige_stunden_preise_ct:
+    name: "Tibber – Preise (ct) zu den Epoch-Stunden oben, gleiche Reihenfolge, semikolon-separiert"
+    max: 255
+
+  twizy_1_ladeplan_offsets:
+    name: "Twizy 1 – aktuell geplante Lade-Epoch-Stunden (informativ/Debug)"
+    max: 255
+
+  twizy_2_ladeplan_offsets:
+    name: "Twizy 2 – aktuell geplante Lade-Epoch-Stunden (informativ/Debug)"
+    max: 255

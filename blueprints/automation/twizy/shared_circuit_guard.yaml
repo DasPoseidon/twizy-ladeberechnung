@@ -1,0 +1,181 @@
+blueprint:
+  name: "Twizy: Gemeinsames Stromkreis-Limit"
+  description: >
+    Beide Twizy-Steckdosen hängen am selben Stromkreis und dürfen zusammen
+    eine maximale Gesamtleistung (Default 3 kW) nicht überschreiten. Dieser
+    Blueprint überwacht die Summe beider Leistungssensoren und schaltet bei
+    Überschreitung automatisch eine der beiden Steckdosen ab, bis die
+    Gesamtleistung wieder im Rahmen ist.
+
+    Priorisierung bei Überschreitung (vereinfachte Heuristik): Es wird die
+    Steckdose abgeschaltet, deren Ladevorgang zuletzt gestartet wurde (also
+    am wenigsten "Fortschritt" hat). Wer deadline-bewusst priorisieren
+    möchte (z. B. das Fahrzeug mit der knapperen Abfahrtszeit bevorzugen),
+    kann diese Logik im Blueprint anpassen.
+
+    Das eigentliche Wiedereinschalten übernimmt NICHT dieser Blueprint,
+    sondern der "Twizy: Lade-Scheduler" jedes Fahrzeugs – dieser Blueprint
+    setzt nach ausreichend langer Erholphase nur die
+    "leistungsbedingt pausiert"-Flags zurück, der Scheduler entscheidet dann
+    im nächsten Prüfzyklus regulär neu.
+  domain: automation
+  source_url: https://github.com/DasPoseidon/twizy-ladeberechnung/blob/main/blueprints/automation/twizy/shared_circuit_guard.yaml
+  input:
+    innen_switch:
+      name: Steckdose "innen" – Schalter
+      selector:
+        entity:
+          domain: switch
+
+    aussen_switch:
+      name: Steckdose "außen" – Schalter
+      selector:
+        entity:
+          domain: switch
+
+    innen_power_sensor:
+      name: Steckdose "innen" – Leistungssensor (W)
+      selector:
+        entity:
+          domain: sensor
+
+    aussen_power_sensor:
+      name: Steckdose "außen" – Leistungssensor (W)
+      selector:
+        entity:
+          domain: sensor
+
+    innen_socket_helper:
+      name: Helper – Steckdose "innen" belegt durch
+      default: input_select.twizy_socket_innen_belegt_durch
+      selector:
+        entity:
+          domain: input_select
+
+    aussen_socket_helper:
+      name: Helper – Steckdose "außen" belegt durch
+      default: input_select.twizy_socket_aussen_belegt_durch
+      selector:
+        entity:
+          domain: input_select
+
+    twizy_1_paused_helper:
+      name: Helper – Twizy 1 leistungsbedingt pausiert
+      default: input_boolean.twizy_1_leistungsbedingt_pausiert
+      selector:
+        entity:
+          domain: input_boolean
+
+    twizy_2_paused_helper:
+      name: Helper – Twizy 2 leistungsbedingt pausiert
+      default: input_boolean.twizy_2_leistungsbedingt_pausiert
+      selector:
+        entity:
+          domain: input_boolean
+
+    max_power_helper:
+      name: Helper – maximale Gesamtleistung (W)
+      default: input_number.twizy_max_gesamtleistung_watt
+      selector:
+        entity:
+          domain: input_number
+
+    overshoot_debounce:
+      name: Entprellzeit bei Überschreitung
+      description: So lange muss die Überschreitung anhalten, bevor abgeschaltet wird (vermeidet Reaktion auf kurze Lastspitzen).
+      default:
+        seconds: 30
+      selector:
+        duration: {}
+
+    resume_margin_watt:
+      name: Sicherheitsabstand für Freigabe (W)
+      description: Gesamtleistung muss um diesen Betrag unter dem Limit liegen, bevor die Pause aufgehoben wird.
+      default: 200
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: 50
+
+    min_pause_duration:
+      name: Mindest-Erholzeit
+      description: So lange muss die Gesamtleistung unter (Limit - Sicherheitsabstand) bleiben, bevor die Pause-Flags zurückgesetzt werden.
+      default:
+        minutes: 5
+      selector:
+        duration: {}
+
+variables:
+  innen_switch: !input innen_switch
+  aussen_switch: !input aussen_switch
+  innen_power_sensor: !input innen_power_sensor
+  aussen_power_sensor: !input aussen_power_sensor
+  innen_socket_helper: !input innen_socket_helper
+  aussen_socket_helper: !input aussen_socket_helper
+  twizy_1_paused_helper: !input twizy_1_paused_helper
+  twizy_2_paused_helper: !input twizy_2_paused_helper
+  max_power_helper: !input max_power_helper
+  resume_margin_watt: !input resume_margin_watt
+
+trigger:
+  - platform: template
+    value_template: >
+      {{ (states(innen_power_sensor) | float(0)) + (states(aussen_power_sensor) | float(0))
+         > (states(max_power_helper) | float(3000)) }}
+    for: !input overshoot_debounce
+    id: overshoot
+  - platform: template
+    value_template: >
+      {{ (states(innen_power_sensor) | float(0)) + (states(aussen_power_sensor) | float(0))
+         <= (states(max_power_helper) | float(3000)) - resume_margin_watt }}
+    for: !input min_pause_duration
+    id: recovered
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: overshoot
+          - condition: state
+            entity_id: !input innen_switch
+            state: "on"
+          - condition: state
+            entity_id: !input aussen_switch
+            state: "on"
+        sequence:
+          - variables:
+              innen_vehicle: "{{ states(innen_socket_helper) }}"
+              aussen_vehicle: "{{ states(aussen_socket_helper) }}"
+              innen_since: "{{ states[innen_switch].last_changed }}"
+              aussen_since: "{{ states[aussen_switch].last_changed }}"
+              # zuletzt eingeschaltete Steckdose = wenigster Ladefortschritt -> wird pausiert
+              cut_innen: "{{ innen_since >= aussen_since }}"
+              cut_vehicle: "{{ innen_vehicle if cut_innen else aussen_vehicle }}"
+              cut_switch: "{{ innen_switch if cut_innen else aussen_switch }}"
+              cut_paused_helper: "{{ twizy_1_paused_helper if cut_vehicle == 'twizy_1' else twizy_2_paused_helper }}"
+          - service: switch.turn_off
+            target:
+              entity_id: "{{ cut_switch }}"
+          - service: input_boolean.turn_on
+            target:
+              entity_id: "{{ cut_paused_helper }}"
+          - service: persistent_notification.create
+            data:
+              title: "Twizy Ladesteuerung: Stromkreis-Limit erreicht"
+              message: >
+                Gesamtleistung beider Steckdosen überschreitet das Limit.
+                Steckdose {{ 'innen' if cut_innen else 'außen' }}
+                ({{ cut_vehicle }}) wurde pausiert.
+
+      - conditions:
+          - condition: trigger
+            id: recovered
+        sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id:
+                - !input twizy_1_paused_helper
+                - !input twizy_2_paused_helper
+
+mode: single

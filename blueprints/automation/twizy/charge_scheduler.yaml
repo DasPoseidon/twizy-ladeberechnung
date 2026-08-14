@@ -1,0 +1,336 @@
+blueprint:
+  name: "Twizy: Lade-Scheduler (ein Fahrzeug)"
+  description: >
+    Steuert für EIN Twizy-Fahrzeug, wann geladen wird. Muss für jedes der
+    beiden Fahrzeuge einmal als eigene Automatisierung aus diesem Blueprint
+    angelegt werden (einmal mit vehicle_id "twizy_1", einmal mit "twizy_2").
+
+    Ablauf pro Prüfzyklus:
+    1. Ermittelt anhand der Steckdosen-Zuordnungs-Helper, ob dieses Fahrzeug
+       aktuell an "innen" oder "außen" hängt.
+    2. Ermittelt die benötigte Ladedauer – standardmäßig die vom OVMS
+       geschätzte Restzeit bis voll, alternativ (Schalter-Helper) ein selbst
+       gepflegter Minutenwert.
+    3. Bestimmt die nächste Abfahrtszeit (Deadline) aus dem
+       Abfahrtszeit-Helper.
+    4. Wählt anhand des 1x täglich gecachten Tibber-Preisrankings die
+       günstigsten Stunden bis zur Deadline, die in Summe die benötigte
+       Ladedauer abdecken.
+    5. Schaltet die zugeordnete Steckdose in diesen Stunden ein – außer die
+       Deadline wird sonst verfehlt, dann wird notfalls sofort weitergeladen
+       ("Aufhol-Logik").
+    6. Wird die Steckdose von Hand eingeschaltet, wird das als manueller
+       Ladewunsch erkannt (Heuristik: Zustandsänderung ohne automation-
+       Kontext) und die Preisoptimierung übersteuert – die Abfahrtszeit als
+       spätester Voll-Zeitpunkt bleibt aber weiter gültig (die Automatisierung
+       schaltet trotzdem ab, sobald das Fahrzeug voll ist).
+    7. Bevor tatsächlich eingeschaltet wird, wird zu Ladebeginn geprüft, ob
+       laut OVMS überhaupt ein Ladekabel am erwarteten Fahrzeug steckt – wenn
+       nicht, wird nicht eingeschaltet, sondern eine Benachrichtigung
+       ausgelöst (mutmaßlich falsche Steckdosen-Zuordnung).
+    8. Das gemeinsame 3-kW-Stromkreis-Limit wird NICHT hier, sondern im
+       separaten Blueprint "Twizy: Gemeinsames Stromkreis-Limit" überwacht;
+       dessen Pausier-Helper wird hier lediglich respektiert.
+  domain: automation
+  source_url: https://github.com/DasPoseidon/twizy-ladeberechnung/blob/main/blueprints/automation/twizy/charge_scheduler.yaml
+  input:
+    vehicle_id:
+      name: Fahrzeug-Kennung
+      description: >
+        Muss zu den in den Steckdosen-Helpern verwendeten Optionen passen
+        ("twizy_1" oder "twizy_2").
+      default: "twizy_1"
+      selector:
+        select:
+          options:
+            - "twizy_1"
+            - "twizy_2"
+
+    innen_switch:
+      name: Steckdose "innen" – Schalter
+      selector:
+        entity:
+          domain: switch
+
+    aussen_switch:
+      name: Steckdose "außen" – Schalter
+      selector:
+        entity:
+          domain: switch
+
+    innen_socket_helper:
+      name: Helper – Steckdose "innen" belegt durch
+      default: input_select.twizy_socket_innen_belegt_durch
+      selector:
+        entity:
+          domain: input_select
+
+    aussen_socket_helper:
+      name: Helper – Steckdose "außen" belegt durch
+      default: input_select.twizy_socket_aussen_belegt_durch
+      selector:
+        entity:
+          domain: input_select
+
+    soc_sensor:
+      name: Akkustand-Sensor (SoC, %) dieses Fahrzeugs
+      selector:
+        entity:
+          domain: sensor
+
+    soc_full_threshold:
+      name: SoC-Schwelle "voll" (%)
+      default: 97
+      selector:
+        number:
+          min: 80
+          max: 100
+          step: 1
+
+    etr_full_sensor:
+      name: OVMS – geschätzte Restzeit bis voll (Minuten)
+      selector:
+        entity:
+          domain: sensor
+
+    cable_connected_sensor:
+      name: OVMS – Ladekabel gesteckt (dieses Fahrzeug)
+      selector:
+        entity:
+          domain: binary_sensor
+
+    departure_time_helper:
+      name: Helper – Abfahrtszeit dieses Fahrzeugs
+      default: input_datetime.twizy_1_abfahrtszeit
+      selector:
+        entity:
+          domain: input_datetime
+
+    use_custom_duration_helper:
+      name: Helper – "eigene Ladedauer verwenden" Schalter
+      default: input_boolean.twizy_1_eigene_ladedauer_verwenden
+      selector:
+        entity:
+          domain: input_boolean
+
+    custom_duration_helper:
+      name: Helper – eigene Ladedauer (Minuten)
+      default: input_number.twizy_1_eigene_ladedauer_minuten
+      selector:
+        entity:
+          domain: input_number
+
+    manual_flag_helper:
+      name: Helper – manuelles Laden aktiv
+      default: input_boolean.twizy_1_manuelles_laden
+      selector:
+        entity:
+          domain: input_boolean
+
+    paused_flag_helper:
+      name: Helper – wegen Stromkreis-Limit pausiert
+      default: input_boolean.twizy_1_leistungsbedingt_pausiert
+      selector:
+        entity:
+          domain: input_boolean
+
+    ladeplan_helper:
+      name: Helper – aktueller Ladeplan (Debug/Info)
+      default: input_text.twizy_1_ladeplan_offsets
+      selector:
+        entity:
+          domain: input_text
+
+    socket_zuordnung_geprueft_helper:
+      name: Helper – Steckdosenzuordnung verifiziert
+      default: input_boolean.twizy_socket_zuordnung_geprueft
+      selector:
+        entity:
+          domain: input_boolean
+
+    offsets_helper:
+      name: Helper – Tibber günstige Stunden (Epoch-Stunden)
+      default: input_text.tibber_guenstige_stunden_offsets
+      selector:
+        entity:
+          domain: input_text
+
+    check_interval:
+      name: Prüfintervall
+      description: Wie oft neu bewertet wird, ob die Steckdose ein-/ausgeschaltet werden soll.
+      default: "/10"
+      selector:
+        select:
+          options:
+            - "/5"
+            - "/10"
+            - "/15"
+            - "/20"
+            - "/30"
+
+variables:
+  vehicle_id: !input vehicle_id
+  innen_switch: !input innen_switch
+  aussen_switch: !input aussen_switch
+  innen_socket_helper: !input innen_socket_helper
+  aussen_socket_helper: !input aussen_socket_helper
+  soc_sensor: !input soc_sensor
+  soc_full_threshold: !input soc_full_threshold
+  etr_full_sensor: !input etr_full_sensor
+  cable_connected_sensor: !input cable_connected_sensor
+  departure_time_helper: !input departure_time_helper
+  use_custom_duration_helper: !input use_custom_duration_helper
+  custom_duration_helper: !input custom_duration_helper
+  manual_flag_helper: !input manual_flag_helper
+  paused_flag_helper: !input paused_flag_helper
+  ladeplan_helper: !input ladeplan_helper
+  socket_zuordnung_geprueft_helper: !input socket_zuordnung_geprueft_helper
+  offsets_helper: !input offsets_helper
+
+trigger:
+  - platform: time_pattern
+    minutes: !input check_interval
+    id: periodic
+  # ^ check_interval ist ein Wildcard-String wie "/10" ("alle 10 Minuten")
+  - platform: state
+    entity_id: !input departure_time_helper
+    id: periodic
+  - platform: state
+    entity_id: !input use_custom_duration_helper
+    id: periodic
+  - platform: state
+    entity_id: !input custom_duration_helper
+    id: periodic
+  - platform: state
+    entity_id: !input paused_flag_helper
+    id: periodic
+  - platform: state
+    entity_id: !input offsets_helper
+    id: periodic
+  - platform: state
+    entity_id:
+      - !input innen_switch
+      - !input aussen_switch
+    to: "on"
+    id: switch_on
+  - platform: state
+    entity_id:
+      - !input innen_switch
+      - !input aussen_switch
+    to: "off"
+    id: switch_off
+
+action:
+  - variables:
+      # bewusst als einzeiliger ternärer Ausdruck (kein {% if %}-Block):
+      # nur so bleibt current_switch garantiert ein sauberer Entity-ID-String
+      # ohne eingestreute Zeilenumbrüche/Leerzeichen aus dem YAML-Block.
+      current_switch: "{{ innen_switch if states(innen_socket_helper) == vehicle_id else (aussen_switch if states(aussen_socket_helper) == vehicle_id else none) }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ current_switch is none }}"
+    then:
+      - stop: "Fahrzeug {{ vehicle_id }} aktuell keiner Steckdose zugeordnet"
+
+  # --- manuelles Ein-/Ausschalten erkennen (Heuristik: kein automation-Kontext) ---
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: switch_on
+          - condition: template
+            value_template: >
+              {{ trigger.entity_id == current_switch and trigger.to_state.context.parent_id is none }}
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: !input manual_flag_helper
+      - conditions:
+          - condition: trigger
+            id: switch_off
+          - condition: template
+            value_template: "{{ trigger.entity_id == current_switch }}"
+        sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input manual_flag_helper
+
+  - variables:
+      ovms_etr_val: "{{ states(etr_full_sensor) }}"
+      duration_minutes: "{{ (states(custom_duration_helper) | float(120)) if (is_state(use_custom_duration_helper, 'on') or ovms_etr_val in ['unknown', 'unavailable', 'none', '']) else (ovms_etr_val | float(120)) }}"
+      dep_time_state: "{{ states(departure_time_helper) }}"
+      dep_today: "{{ now().replace(hour=(dep_time_state.split(':')[0] | int), minute=(dep_time_state.split(':')[1] | int), second=0, microsecond=0) }}"
+      deadline: "{{ dep_today if dep_today > now() else dep_today + timedelta(days=1) }}"
+      soc: "{{ states(soc_sensor) | float(0) }}"
+      is_full: "{{ soc >= (soc_full_threshold | float) }}"
+      is_manual: "{{ is_state(manual_flag_helper, 'on') }}"
+      is_paused: "{{ is_state(paused_flag_helper, 'on') }}"
+      minutes_to_deadline: "{{ (deadline - now()).total_seconds() / 60 }}"
+      must_charge_now: "{{ minutes_to_deadline <= (duration_minutes + 5) }}"
+      current_epoch_hour: "{{ (now().timestamp() | int) // 3600 }}"
+      deadline_epoch_hour: "{{ (deadline.timestamp() | int) // 3600 }}"
+      cheap_epoch_hours: >
+        {% set raw = states(offsets_helper) %}
+        {% set body = raw[1:] if (raw not in ['unknown', 'unavailable', ''] and raw.startswith('h')) else '' %}
+        {{ (body.split(';') | map('int') | list) if body else [] }}
+      needed_slots: "{{ [((duration_minutes / 60) | round(0, 'ceil') | int), 1] | max }}"
+      future_cheap_epoch_hours: >
+        {{ cheap_epoch_hours | select('ge', current_epoch_hour) | select('le', deadline_epoch_hour) | sort | list }}
+      plan_offsets: "{{ future_cheap_epoch_hours[:needed_slots] }}"
+      should_charge_price: "{{ current_epoch_hour in plan_offsets }}"
+      should_charge_now: "{{ (not is_full) and (not is_paused) and (is_manual or should_charge_price or must_charge_now) }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ is_full }}"
+    then:
+      - service: input_boolean.turn_off
+        target:
+          entity_id: !input manual_flag_helper
+
+  - service: input_text.set_value
+    target:
+      entity_id: !input ladeplan_helper
+    data:
+      value: >-
+        {{ ('h' ~ (plan_offsets | map('string') | join(';')))[:255] }}
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ should_charge_now and is_state(current_switch, 'off') }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: >
+                  {{ is_state(cable_connected_sensor, 'on') or is_state(cable_connected_sensor, 'true') }}
+            then:
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: !input socket_zuordnung_geprueft_helper
+              - service: switch.turn_on
+                target:
+                  entity_id: "{{ current_switch }}"
+            else:
+              - service: input_boolean.turn_off
+                target:
+                  entity_id: !input socket_zuordnung_geprueft_helper
+              - service: persistent_notification.create
+                data:
+                  title: "Twizy Ladesteuerung: Zuordnung prüfen"
+                  message: >
+                    {{ vehicle_id }} sollte laut Zuordnung an der Steckdose
+                    {{ 'innen' if current_switch == innen_switch else 'außen' }}
+                    laden, das Ladekabel ist laut OVMS aber nicht gesteckt.
+                    Bitte input_select-Zuordnung prüfen/korrigieren, bevor
+                    weiter geladen wird.
+      - conditions:
+          - condition: template
+            value_template: "{{ (not should_charge_now) and is_state(current_switch, 'on') }}"
+        sequence:
+          - service: switch.turn_off
+            target:
+              entity_id: "{{ current_switch }}"
+
+mode: single
+max_exceeded: silent
