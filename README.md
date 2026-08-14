@@ -118,7 +118,8 @@ Leistungssensor der jeweils anderen Steckdose.
 4. In den Helpern (`Einstellungen → Geräte & Dienste → Helfer`) die
    Abfahrtszeiten (`twizy_1_abfahrtszeit`, `twizy_2_abfahrtszeit`) und bei
    Bedarf das Stromkreis-Limit (`twizy_max_gesamtleistung_watt`, Default
-   3000 W) anpassen.
+   3000 W) sowie die Mindest-Einschaltzeit pro Tag
+   (`twizy_{1,2}_mindestlaufzeit_minuten`, Default 30 min) anpassen.
 
 ## Verhalten im Detail
 
@@ -178,6 +179,24 @@ Für jedes Fahrzeug wird pro Prüfzyklus (Default alle 10 min) berechnet:
   mehr aus, um die benötigte Dauer allein aus günstigen Stunden zu decken,
   wird unabhängig vom Preis sofort weiter geladen, damit die Deadline nicht
   gerissen wird.
+
+### Laden abgeschlossen & Mindest-Einschaltzeit pro Tag
+Ist der SoC-Schwellwert erreicht, wird die Steckdose abgeschaltet – so weit
+die Grundregel. Zusätzlich gibt es eine einstellbare **Mindest-Einschaltzeit
+pro Tag** (`twizy_{1,2}_mindestlaufzeit_minuten`, Default 30 min, 0
+deaktiviert die Funktion): Damit die Steckdose auch an Tagen, an denen das
+Fahrzeug schon voll ist (z. B. weil es kaum gefahren wurde), nicht komplett
+stromlos bleibt, wird sie zur günstigsten verbleibenden Stunde trotzdem
+nochmal eingeschaltet, bis die Mindestzeit erreicht ist.
+
+Dafür führt der Lade-Scheduler intern einen Tages-Zähler
+(`twizy_{1,2}_einschaltzeit_minuten_heute` + `twizy_{1,2}_einschaltzeit_tag`),
+der bei jedem Ausschalten um die Dauer der gerade beendeten Einschaltzeit
+erhöht wird – unabhängig davon, ob das eine reguläre Ladesitzung oder ein
+gezielter "Auffüll"-Vorgang war. Reicht die bisherige Einschaltzeit des
+Tages schon aus (z. B. weil vorher regulär lange geladen wurde), wird keine
+zusätzliche Zeit erzwungen. Der Zähler setzt sich beim nächsten Tageswechsel
+automatisch zurück (erkannt am gespeicherten Datum).
 
 ### Manuelles Einschalten
 Wird eine Steckdose von Hand eingeschaltet (erkannt daran, dass die

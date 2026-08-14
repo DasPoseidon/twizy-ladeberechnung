@@ -45,6 +45,13 @@ blueprint:
        (Erholung nach einer Überlast-Abschaltung durch die Steckdose
        selbst), wird sofort neu bewertet, ob wieder eingeschaltet werden
        soll.
+    10. Ist das Fahrzeug voll geladen, wird die Steckdose grundsätzlich
+        abgeschaltet. Es gibt aber eine einstellbare tägliche
+        Mindest-Einschaltzeit (Default 30 min): Reicht die bisherige
+        Einschaltzeit des Tages (aus echtem Laden, kumuliert über den Tag)
+        dafür nicht aus, wird die Steckdose trotz vollem Akku zur
+        günstigsten verbleibenden Stunde/den günstigsten verbleibenden
+        Stunden nochmal für die fehlende Zeit eingeschaltet.
   domain: automation
   source_url: https://github.com/DasPoseidon/twizy-ladeberechnung/blob/main/blueprints/automation/twizy/charge_scheduler.yaml
   input:
@@ -225,6 +232,32 @@ blueprint:
         entity:
           domain: sensor
 
+    min_on_minutes_helper:
+      name: Helper – Mindest-Einschaltzeit pro Tag (Minuten)
+      description: >
+        Auch wenn das Fahrzeug bereits voll geladen ist, wird die Steckdose
+        an mindestens so vielen Minuten pro Tag eingeschaltet (zur
+        günstigsten verbleibenden Zeit). 0 deaktiviert diese Mindestzeit.
+      default: input_number.twizy_1_mindestlaufzeit_minuten
+      selector:
+        entity:
+          domain: input_number
+
+    on_time_today_minutes_helper:
+      name: Helper – Einschaltzeit heute (Minuten, intern)
+      description: Wird automatisch bei jedem Ausschalten fortgeschrieben.
+      default: input_number.twizy_1_einschaltzeit_minuten_heute
+      selector:
+        entity:
+          domain: input_number
+
+    on_time_today_date_helper:
+      name: Helper – Datum des Einschaltzeit-Zählers (intern)
+      default: input_datetime.twizy_1_einschaltzeit_tag
+      selector:
+        entity:
+          domain: input_datetime
+
     check_interval:
       name: Prüfintervall
       description: Wie oft neu bewertet wird, ob die Steckdose ein-/ausgeschaltet werden soll.
@@ -261,6 +294,9 @@ variables:
   ladeplan_helper: !input ladeplan_helper
   socket_zuordnung_geprueft_helper: !input socket_zuordnung_geprueft_helper
   tibber_price_entity: !input tibber_price_entity
+  min_on_minutes_helper: !input min_on_minutes_helper
+  on_time_today_minutes_helper: !input on_time_today_minutes_helper
+  on_time_today_date_helper: !input on_time_today_date_helper
 
 trigger:
   - platform: time_pattern
@@ -342,6 +378,25 @@ action:
           - service: input_boolean.turn_off
             target:
               entity_id: !input manual_flag_helper
+          # Tages-Einschaltzeit fortschreiben (Grundlage für die
+          # Mindest-Einschaltzeit pro Tag, siehe unten). trigger.from_state
+          # ist der "on"-Zustand vor dem Ausschalten, sein last_changed also
+          # der Einschaltzeitpunkt dieser Sitzung.
+          - variables:
+              today_date_str: "{{ now().strftime('%Y-%m-%d') }}"
+              stored_date_str: "{{ states(on_time_today_date_helper) }}"
+              session_minutes: "{{ (trigger.to_state.last_changed - trigger.from_state.last_changed).total_seconds() / 60 }}"
+              prior_today_minutes: "{{ (states(on_time_today_minutes_helper) | float(0)) if stored_date_str == today_date_str else 0 }}"
+          - service: input_number.set_value
+            target:
+              entity_id: !input on_time_today_minutes_helper
+            data:
+              value: "{{ prior_today_minutes + session_minutes }}"
+          - service: input_datetime.set_datetime
+            target:
+              entity_id: !input on_time_today_date_helper
+            data:
+              date: "{{ today_date_str }}"
 
   - variables:
       ovms_etr_val: "{{ states(etr_full_sensor) }}"
@@ -389,7 +444,25 @@ action:
             | sort(attribute='price'))[:needed_slots | int] }}
       plan_offsets: "{{ cheapest_in_window | map(attribute='epoch_hour') | list | sort }}"
       should_charge_price: "{{ current_epoch_hour in plan_offsets }}"
-      should_charge_now: "{{ (not is_full) and (is_manual or should_charge_price or must_charge_now) }}"
+      # Mindest-Einschaltzeit pro Tag: greift nur, wenn das Fahrzeug schon
+      # voll ist (sonst deckt die normale Ladeplanung die Einschaltzeit
+      # ohnehin ab). "heute" wird aus dem Tages-Zähler gelesen, der bei
+      # jedem Ausschalten fortgeschrieben wird (oben) - läuft der Zähler
+      # noch auf einem alten Datum, gilt er als 0 (neuer Tag).
+      on_time_today_effective: "{{ (states(on_time_today_minutes_helper) | float(0)) if states(on_time_today_date_helper) == now().strftime('%Y-%m-%d') else 0 }}"
+      remaining_min_on_minutes: "{{ [((states(min_on_minutes_helper) | float(0)) - on_time_today_effective), 0] | max }}"
+      maintenance_needed_slots: "{{ [((remaining_min_on_minutes / 60) | round(0, 'ceil') | int), 0] | max }}"
+      maintenance_cheapest_in_window: >
+        {{ (price_entries
+            | selectattr('epoch_hour', 'ge', current_epoch_hour)
+            | selectattr('epoch_hour', 'le', deadline_epoch_hour)
+            | list
+            | sort(attribute='price'))[:maintenance_needed_slots | int] }}
+      maintenance_plan_offsets: "{{ maintenance_cheapest_in_window | map(attribute='epoch_hour') | list | sort }}"
+      maintenance_hour_now: "{{ current_epoch_hour in maintenance_plan_offsets }}"
+      should_charge_now: >-
+        {{ (not is_full and (is_manual or should_charge_price or must_charge_now)) or
+           (is_full and maintenance_hour_now) }}
       # Verifikation "erwartetes Fahrzeug lädt tatsächlich" über den
       # OVMS-Lade-/Fahrzustand statt eines (oft nicht vorhandenen)
       # Kabel-gesteckt-Sensors.

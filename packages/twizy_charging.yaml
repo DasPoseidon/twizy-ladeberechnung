@@ -85,6 +85,22 @@ input_datetime:
     has_time: true
     initial: "07:00:00"
 
+  # Datum, auf das sich die "Einschaltzeit heute"-Zähler (input_number
+  # weiter unten) beziehen (intern, für den Tageswechsel).
+  twizy_1_einschaltzeit_tag:
+    name: "Twizy 1 – Datum des Einschaltzeit-Zählers (intern)"
+    icon: mdi:calendar-clock
+    has_date: true
+    has_time: false
+    initial: "2000-01-01"
+
+  twizy_2_einschaltzeit_tag:
+    name: "Twizy 2 – Datum des Einschaltzeit-Zählers (intern)"
+    icon: mdi:calendar-clock
+    has_date: true
+    has_time: false
+    initial: "2000-01-01"
+
 input_number:
   twizy_1_eigene_ladedauer_minuten:
     name: "Twizy 1 – selbst berechnete Ladedauer"
@@ -115,6 +131,45 @@ input_number:
     # Wird vom Lade-Scheduler nur beim EINSCHALTEN geprüft (Vermeidung
     # einer absehbaren Überlast), nicht aktiv überwacht - die Steckdosen
     # haben eigenen Überlastschutz.
+
+  twizy_1_mindestlaufzeit_minuten:
+    name: "Twizy 1 – Mindest-Einschaltzeit der Steckdose pro Tag (auch wenn voll)"
+    icon: mdi:timer-sand
+    min: 0
+    max: 240
+    step: 5
+    initial: 30
+    unit_of_measurement: min
+
+  twizy_2_mindestlaufzeit_minuten:
+    name: "Twizy 2 – Mindest-Einschaltzeit der Steckdose pro Tag (auch wenn voll)"
+    icon: mdi:timer-sand
+    min: 0
+    max: 240
+    step: 5
+    initial: 30
+    unit_of_measurement: min
+
+  # Interne Zähler: bereits erreichte Einschaltzeit "heute" (siehe Datum
+  # unten). Werden vom Lade-Scheduler bei jedem Ausschalten fortgeschrieben,
+  # nicht zur manuellen Bedienung gedacht.
+  twizy_1_einschaltzeit_minuten_heute:
+    name: "Twizy 1 – Steckdose heute bereits eingeschaltet (Minuten, intern)"
+    icon: mdi:counter
+    min: 0
+    max: 1500
+    step: 1
+    initial: 0
+    unit_of_measurement: min
+
+  twizy_2_einschaltzeit_minuten_heute:
+    name: "Twizy 2 – Steckdose heute bereits eingeschaltet (Minuten, intern)"
+    icon: mdi:counter
+    min: 0
+    max: 1500
+    step: 1
+    initial: 0
+    unit_of_measurement: min
 
 # ---------------------------------------------------------------------------
 # Ladeplan (informativ/Debug) – der Lade-Scheduler liest die Tibber-Preise
