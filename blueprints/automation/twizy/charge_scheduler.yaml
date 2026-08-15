@@ -294,20 +294,34 @@ blueprint:
         entity:
           domain: [device_tracker, sensor]
 
+    connectivity_probe_enabled_helper:
+      name: Helper – Verbindungsprüfung nach Ankunft aktiv
+      description: >
+        Schaltet die Verbindungsprüfung nach Ankunft (siehe unten) für
+        dieses Fahrzeug komplett ein/aus. Bei "aus" wird nur noch bei
+        regulären preis-/deadline-getriebenen Ladeversuchen verifiziert
+        (Benachrichtigung kommt dann ggf. erst zum tatsächlichen
+        Ladestart).
+      default: input_boolean.twizy_1_verbindungspruefung_aktiv
+      selector:
+        entity:
+          domain: input_boolean
+
     connectivity_probe_window:
       name: Zeitfenster für Verbindungsprüfung nach Ankunft
       description: >
         Wie lange nach der Ankunft zuhause automatisch (unabhängig vom
         Preis) kurz versucht wird einzuschalten, um zu prüfen, ob das
         Fahrzeug tatsächlich angeschlossen ist - nur falls noch echter
-        Ladebedarf besteht und die Zuordnung noch nicht verifiziert wurde.
-        Schlägt das fehl, kommt die Benachrichtigung "möglicherweise nicht
-        angeschlossen". Danach wird nicht mehr automatisch dafür
-        eingeschaltet (nur noch regulär preis-/deadline-getrieben), um die
-        Steckdose nicht dauerhaft alle paar Minuten klicken zu lassen, wenn
-        das Fahrzeug tatsächlich nicht angeschlossen ist.
+        Ladebedarf besteht, die Zuordnung noch nicht verifiziert wurde und
+        die Verbindungsprüfung oben aktiviert ist. Schlägt das fehl, kommt
+        die Benachrichtigung "möglicherweise nicht angeschlossen". Danach
+        wird nicht mehr automatisch dafür eingeschaltet (nur noch regulär
+        preis-/deadline-getrieben), um die Steckdose nicht dauerhaft alle
+        paar Minuten klicken zu lassen, wenn das Fahrzeug tatsächlich
+        nicht angeschlossen ist.
       default:
-        minutes: 60
+        minutes: 10
       selector:
         duration: {}
 
@@ -386,6 +400,7 @@ variables:
   next_start_helper: !input next_start_helper
   socket_zuordnung_geprueft_helper: !input socket_zuordnung_geprueft_helper
   location_sensor: !input location_sensor
+  connectivity_probe_enabled_helper: !input connectivity_probe_enabled_helper
   connectivity_probe_window: !input connectivity_probe_window
   min_on_minutes_helper: !input min_on_minutes_helper
   on_time_today_minutes_helper: !input on_time_today_minutes_helper
@@ -623,7 +638,8 @@ action:
       seconds_since_arrival: "{{ (now() - states[location_sensor].last_changed).total_seconds() if is_home else 0 }}"
       connectivity_probe_window_seconds: "{{ timedelta(**connectivity_probe_window).total_seconds() }}"
       connectivity_probe_needed: >-
-        {{ is_home and not is_full and has_real_deadline and
+        {{ is_state(connectivity_probe_enabled_helper, 'on') and
+           is_home and not is_full and has_real_deadline and
            not is_state(socket_zuordnung_geprueft_helper, 'on') and
            seconds_since_arrival <= connectivity_probe_window_seconds }}
       should_charge_now: >-

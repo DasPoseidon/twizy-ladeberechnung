@@ -41,6 +41,8 @@ views:
                 name: Eigene Ladedauer (Minuten)
               - entity: input_number.twizy_1_mindestlaufzeit_minuten
                 name: Mindest-Einschaltzeit pro Tag
+              - entity: input_boolean.twizy_1_verbindungspruefung_aktiv
+                name: Verbindungsprüfung nach Ankunft
               - type: divider
               - entity: input_boolean.twizy_1_manuelles_laden
                 name: Manuelles Laden aktiv (Status)
@@ -98,6 +100,8 @@ views:
                 name: Eigene Ladedauer (Minuten)
               - entity: input_number.twizy_2_mindestlaufzeit_minuten
                 name: Mindest-Einschaltzeit pro Tag
+              - entity: input_boolean.twizy_2_verbindungspruefung_aktiv
+                name: Verbindungsprüfung nach Ankunft
               - type: divider
               - entity: input_boolean.twizy_2_manuelles_laden
                 name: Manuelles Laden aktiv (Status)

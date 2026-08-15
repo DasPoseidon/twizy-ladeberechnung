@@ -204,13 +204,17 @@ Damit "zuhause + Ladebedarf, aber nicht angeschlossen" nicht erst kurz vor
 einer knappen Deadline auffällt (wo die Aufhol-Logik ohnehin einen
 Ladeversuch – und damit eine Verifikation – auslösen würde), gibt es
 zusätzlich eine **Verbindungsprüfung kurz nach Ankunft**: Innerhalb eines
-Zeitfensters (`connectivity_probe_window`, Default 60 min) nach Ankunft
+Zeitfensters (`connectivity_probe_window`, Default 10 min) nach Ankunft
 zuhause wird bei echtem Ladebedarf und noch unverifizierter Zuordnung
 unabhängig vom Strompreis kurz versucht einzuschalten, rein um die
 Verbindung zu testen. Nach diesem Zeitfenster wird dafür nicht mehr
 automatisch eingeschaltet (nur noch preis-/deadline-getrieben) – sonst
 würde die Steckdose bei einem tatsächlich dauerhaft nicht angeschlossenen
-Fahrzeug den ganzen Tag über alle paar Minuten klicken.
+Fahrzeug den ganzen Tag über alle paar Minuten klicken. Über
+`twizy_{1,2}_verbindungspruefung_aktiv` lässt sich diese Prüfung pro
+Fahrzeug komplett ein-/ausschalten – bei "aus" kommt die Benachrichtigung
+nur noch bei einem tatsächlichen preis-/deadline-getriebenen Ladeversuch
+(kann dann auch erst kurz vor der Abfahrtszeit sein).
 
 ### Preisoptimiertes Laden & Abfahrtszeit
 Die Abfahrtszeit ist **pro Wochentag einzeln einstellbar** (7 Helper je

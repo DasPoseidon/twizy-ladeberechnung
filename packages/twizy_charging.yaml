@@ -55,6 +55,16 @@ input_boolean:
     icon: mdi:check-decagram
     initial: false
 
+  twizy_1_verbindungspruefung_aktiv:
+    name: "Twizy 1 – Verbindungsprüfung nach Ankunft aktiv"
+    icon: mdi:power-plug-outline
+    initial: true
+
+  twizy_2_verbindungspruefung_aktiv:
+    name: "Twizy 2 – Verbindungsprüfung nach Ankunft aktiv"
+    icon: mdi:power-plug-outline
+    initial: true
+
   twizy_1_manuelles_laden:
     name: "Twizy 1 – manuell gestartetes Laden aktiv"
     icon: mdi:hand-back-right
