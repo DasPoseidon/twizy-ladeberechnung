@@ -115,7 +115,16 @@ Leistungssensor der jeweils anderen Steckdose.
    | Blueprint | Wie oft anlegen | Wichtige Eingaben |
    |---|---|---|
    | Steckdosen-Zuordnung | 1× | Standort- & Moving-Sensoren beider Fahrzeuge |
-   | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren + Standort-Entität **des jeweiligen Fahrzeugs**, beide Schalter + beide Leistungssensoren, sowie bei der zweiten Instanz die `twizy_2_*`-Helper statt der `twizy_1_*`-Defaults auswählen |
+   | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren + Standort-Entität **des jeweiligen Fahrzeugs**, beide Schalter + beide Leistungssensoren |
+
+   Alle Helper-Entities (Abfahrtszeiten, Ladedauer, Korrekturfaktor,
+   Zuordnungs-/Verifikations-Flags usw.) werden im Blueprint automatisch aus
+   `vehicle_id` abgeleitet (`input_boolean.<vehicle_id>_manuelles_laden` usw.)
+   – bei der zweiten Instanz muss dafür **nichts** manuell umgestellt werden,
+   nur `vehicle_id` selbst auf `twizy_2` setzen. (Frühere Versionen dieses
+   Blueprints hatten dafür ~18 einzelne Helper-Eingaben, bei denen leicht
+   vergessen werden konnte, sie für die zweite Instanz umzustellen – daher
+   die Umstellung auf automatische Ableitung.)
 
 4. In den Helpern (`Einstellungen → Geräte & Dienste → Helfer`) die
    Abfahrtszeiten pro Wochentag (`twizy_{1,2}_abfahrtszeit_montag` …
@@ -247,10 +256,12 @@ eigenen zusätzlichen Helper zu brauchen. Der Lade-Scheduler überspringt
 diesen Tag dann bei der Deadline-Suche und schaut bis zu eine Woche voraus,
 bis er einen Tag mit einer Zeit ungleich 00:00 findet (die Ladeplanung
 kann dabei durchaus schon an den "arbeitsfreien" Tagen dazwischen
-stattfinden, wenn das günstiger ist). Sind alle 7 Tage auf 00:00 gesetzt,
-lädt die Automatisierung nicht automatisch – manuelles Einschalten und die
-tägliche Mindest-Einschaltzeit (siehe unten) funktionieren trotzdem
-weiterhin.
+stattfinden, wenn das günstiger ist). **Sind alle 7 Tage auf 00:00
+gesetzt**, gibt es keine echte Deadline und damit auch keine Aufhol-Logik –
+geladen wird dann trotzdem automatisch, aber ausschließlich zu den
+günstigsten Stunden innerhalb der bereits bekannten Tibber-Preisdaten
+(praktisch: heute + morgen, sobald bekannt). Die tägliche
+Mindest-Einschaltzeit (siehe unten) funktioniert unabhängig davon immer.
 
 **Warum kein `schedule`-Helper?** Ein `schedule`-Helper wäre naheliegend,
 hat hier aber einen Haken: Sein `next_event`-Attribut zeigt außerhalb des
@@ -259,6 +270,28 @@ Mitternacht), nicht die eigentliche Abfahrtszeit des nächsten Tages. Der
 Lade-Scheduler braucht aber jederzeit (auch nachts) die tatsächliche
 nächste Abfahrtszeit, um das Preisfenster korrekt zu berechnen – dafür
 sind die 7 separaten `input_datetime`-Helper direkter nutzbar.
+
+### Selbstlernender Korrekturfaktor für die OVMS-Restzeitschätzung
+Die von OVMS geschätzte Restzeit bis voll ist die Grundlage der Ladeplanung
+(siehe oben), aber je nach Fahrzeug/Firmware oft ungenau. Der Lade-Scheduler
+gleicht das mit einem Korrekturfaktor aus
+(`twizy_{1,2}_ladezeit_korrekturfaktor`, Start 1,0): Die tatsächlich
+verwendete Ladedauer ist immer `OVMS-Schätzung × Korrekturfaktor` (nur wenn
+nicht auf die eigene Ladedauer umgeschaltet ist).
+
+Der Faktor lernt aus vergangenen Ladungen: Beim Einschalten wird die
+aktuelle OVMS-Schätzung gemerkt (`twizy_{1,2}_sitzung_start_etr_minuten`,
+intern); erreicht der SoC beim Ausschalten mindestens die
+Korrektur-SoC-Schwelle (Blueprint-Eingabe `correction_factor_soc_threshold`,
+Default 95 %), wird das Verhältnis tatsächliche/geschätzte Dauer dieser
+Sitzung berechnet (auf 0,3–3,0 begrenzt, um Ausreißer abzufedern) und der
+Korrekturfaktor per gleitendem Mittelwert angepasst (70 % alter Wert, 30 %
+neues Verhältnis). Die 95 %-Schwelle liegt bewusst unter der "voll"-Schwelle
+(Default 97 %), weil die letzten Prozent oft per Erhaltungsladung sehr
+langsam laufen und die Messung sonst verzerren würden. Sitzungen, die diese
+Schwelle nicht erreichen (z. B. vorzeitig abgebrochen), fließen nicht in die
+Anpassung ein. Der aktuelle Faktor ist im Dashboard unter "Einstellungen"
+als Debug-Wert sichtbar.
 
 ### Laden abgeschlossen & Mindest-Einschaltzeit pro Tag
 Ist der SoC-Schwellwert erreicht, wird die Steckdose abgeschaltet – so weit

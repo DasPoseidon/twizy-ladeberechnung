@@ -274,6 +274,47 @@ input_number:
     initial: 0
     unit_of_measurement: min
 
+  # Selbstlernender Korrekturfaktor für die OVMS-Restzeitschätzung: wird
+  # nach jeder Ladung, die mindestens die Korrektur-SoC-Schwelle des
+  # Lade-Scheduler-Blueprints erreicht hat, per gleitendem Mittelwert aus
+  # dem Verhältnis tatsächliche/geschätzte Ladedauer angepasst.
+  twizy_1_ladezeit_korrekturfaktor:
+    name: "Twizy 1 – Ladezeit-Korrekturfaktor (selbstlernend)"
+    icon: mdi:chart-line-variant
+    min: 0.3
+    max: 3.0
+    step: 0.05
+    initial: 1.0
+
+  twizy_2_ladezeit_korrekturfaktor:
+    name: "Twizy 2 – Ladezeit-Korrekturfaktor (selbstlernend)"
+    icon: mdi:chart-line-variant
+    min: 0.3
+    max: 3.0
+    step: 0.05
+    initial: 1.0
+
+  # OVMS-Restzeitschätzung zum Zeitpunkt des letzten Ladestarts (intern,
+  # Grundlage für den Korrekturfaktor oben - nicht zur manuellen Bedienung
+  # gedacht).
+  twizy_1_sitzung_start_etr_minuten:
+    name: "Twizy 1 – OVMS-Restzeitschätzung bei Ladestart (intern)"
+    icon: mdi:timer-marker-outline
+    min: 0
+    max: 1500
+    step: 1
+    initial: 0
+    unit_of_measurement: min
+
+  twizy_2_sitzung_start_etr_minuten:
+    name: "Twizy 2 – OVMS-Restzeitschätzung bei Ladestart (intern)"
+    icon: mdi:timer-marker-outline
+    min: 0
+    max: 1500
+    step: 1
+    initial: 0
+    unit_of_measurement: min
+
 # ---------------------------------------------------------------------------
 # Ladeplan (informativ/Debug) – der Lade-Scheduler ruft die Tibber-Preise
 # per Service (tibber.get_prices) ab und legt hier nur das Ergebnis seiner

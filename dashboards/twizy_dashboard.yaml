@@ -50,6 +50,8 @@ views:
                 name: Zuordnung verifiziert (Status)
               - entity: input_number.twizy_1_einschaltzeit_minuten_heute
                 name: Einschaltzeit heute (Debug)
+              - entity: input_number.twizy_1_ladezeit_korrekturfaktor
+                name: Ladezeit-Korrekturfaktor (Debug)
               - entity: input_text.twizy_1_ladeplan_offsets
                 name: Aktueller Ladeplan (Debug)
       - type: grid
@@ -109,5 +111,7 @@ views:
                 name: Zuordnung verifiziert (Status)
               - entity: input_number.twizy_2_einschaltzeit_minuten_heute
                 name: Einschaltzeit heute (Debug)
+              - entity: input_number.twizy_2_ladezeit_korrekturfaktor
+                name: Ladezeit-Korrekturfaktor (Debug)
               - entity: input_text.twizy_2_ladeplan_offsets
                 name: Aktueller Ladeplan (Debug)

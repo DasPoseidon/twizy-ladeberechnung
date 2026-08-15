@@ -9,17 +9,21 @@ blueprint:
     1. Ermittelt anhand der Steckdosen-Zuordnungs-Helper, ob dieses Fahrzeug
        aktuell an "innen" oder "außen" hängt.
     2. Ermittelt die benötigte Ladedauer – standardmäßig die vom OVMS
-       geschätzte Restzeit bis voll, alternativ (Schalter-Helper) ein selbst
-       gepflegter Minutenwert.
+       geschätzte Restzeit bis voll, multipliziert mit einem selbstlernenden
+       Korrekturfaktor (aus dem Verhältnis tatsächlicher zu geschätzter
+       Ladedauer vergangener Ladungen), alternativ (Schalter-Helper) ein
+       selbst gepflegter Minutenwert.
     3. Bestimmt die nächste Abfahrtszeit (Deadline) aus dem
        Abfahrtszeit-Helper des aktuellen bzw. (falls die heutige Zeit schon
        verstrichen ist) eines der nächsten Tage – für jeden Wochentag ist
        eine eigene Abfahrtszeit einstellbar. Steht ein Tag auf 00:00 Uhr,
        gilt das als "an diesem Tag kein Ladebedarf"; es wird bis zu eine
        Woche vorausgeschaut, bis ein Tag mit einer Zeit ungleich 00:00
-       gefunden wird. Sind alle 7 Tage auf 00:00 gesetzt, lädt die
-       Automatisierung nicht automatisch (manuelles Einschalten und die
-       tägliche Mindest-Einschaltzeit funktionieren weiterhin).
+       gefunden wird. Sind alle 7 Tage auf 00:00 gesetzt (kein
+       Abfahrtsbedarf), gibt es keine Deadline und keine Aufhol-Logik – es
+       wird trotzdem automatisch geladen, aber ausschließlich zu den
+       günstigsten Stunden innerhalb der bereits bekannten Preisdaten
+       (heute/morgen).
     4. Ruft den Service `tibber.get_prices` auf (liefert Stundenpreise für
        heute+morgen als Service-Response, kein eigener Preis-Cache nötig)
        und wählt daraus die günstigsten Stunden bis zur Deadline, die in
@@ -61,6 +65,11 @@ blueprint:
         dafür nicht aus, wird die Steckdose trotz vollem Akku zur
         günstigsten verbleibenden Stunde/den günstigsten verbleibenden
         Stunden nochmal für die fehlende Zeit eingeschaltet.
+
+    Der Korrekturfaktor für die OVMS-Restzeitschätzung wird nach jeder
+    Ladung, bei der der Akku mindestens die Korrektur-SoC-Schwelle (Default
+    95 %) erreicht hat, per gleitendem Mittelwert angepasst (70 % alter
+    Wert, 30 % neu gemessenes Verhältnis) und auf 0,3–3,0 begrenzt.
   domain: automation
   source_url: https://github.com/DasPoseidon/twizy-ladeberechnung/blob/main/blueprints/automation/twizy/charge_scheduler.yaml
   input:
@@ -157,6 +166,22 @@ blueprint:
         entity:
           domain: sensor
 
+    correction_factor_soc_threshold:
+      name: Korrektur-SoC-Schwelle (%)
+      description: >
+        Ab diesem SoC gilt eine Ladung als "voll genug", um ihre
+        tatsächliche Dauer zur Anpassung des Ladezeit-Korrekturfaktors
+        heranzuziehen (siehe Blueprint-Beschreibung). Niedriger als die
+        "voll"-Schwelle unten, weil das Laden von dort bis 100% oft sehr
+        lange dauert (Erhaltungsladung) und die Messung sonst verzerren
+        würde.
+      default: 95
+      selector:
+        number:
+          min: 50
+          max: 100
+          step: 1
+
     charge_state_sensor:
       name: OVMS – Lade-/Fahrzustand (dieses Fahrzeug)
       description: >
@@ -189,100 +214,6 @@ blueprint:
       selector:
         duration: {}
 
-    departure_time_monday_helper:
-      name: Helper – Abfahrtszeit Montag
-      default: input_datetime.twizy_1_abfahrtszeit_montag
-      selector:
-        entity:
-          domain: input_datetime
-
-    departure_time_tuesday_helper:
-      name: Helper – Abfahrtszeit Dienstag
-      default: input_datetime.twizy_1_abfahrtszeit_dienstag
-      selector:
-        entity:
-          domain: input_datetime
-
-    departure_time_wednesday_helper:
-      name: Helper – Abfahrtszeit Mittwoch
-      default: input_datetime.twizy_1_abfahrtszeit_mittwoch
-      selector:
-        entity:
-          domain: input_datetime
-
-    departure_time_thursday_helper:
-      name: Helper – Abfahrtszeit Donnerstag
-      default: input_datetime.twizy_1_abfahrtszeit_donnerstag
-      selector:
-        entity:
-          domain: input_datetime
-
-    departure_time_friday_helper:
-      name: Helper – Abfahrtszeit Freitag
-      default: input_datetime.twizy_1_abfahrtszeit_freitag
-      selector:
-        entity:
-          domain: input_datetime
-
-    departure_time_saturday_helper:
-      name: Helper – Abfahrtszeit Samstag
-      default: input_datetime.twizy_1_abfahrtszeit_samstag
-      selector:
-        entity:
-          domain: input_datetime
-
-    departure_time_sunday_helper:
-      name: Helper – Abfahrtszeit Sonntag
-      default: input_datetime.twizy_1_abfahrtszeit_sonntag
-      selector:
-        entity:
-          domain: input_datetime
-
-    use_custom_duration_helper:
-      name: Helper – "eigene Ladedauer verwenden" Schalter
-      default: input_boolean.twizy_1_eigene_ladedauer_verwenden
-      selector:
-        entity:
-          domain: input_boolean
-
-    custom_duration_helper:
-      name: Helper – eigene Ladedauer (Minuten)
-      default: input_number.twizy_1_eigene_ladedauer_minuten
-      selector:
-        entity:
-          domain: input_number
-
-    manual_flag_helper:
-      name: Helper – manuelles Laden aktiv
-      default: input_boolean.twizy_1_manuelles_laden
-      selector:
-        entity:
-          domain: input_boolean
-
-    ladeplan_helper:
-      name: Helper – aktueller Ladeplan (Debug/Info)
-      default: input_text.twizy_1_ladeplan_offsets
-      selector:
-        entity:
-          domain: input_text
-
-    next_start_helper:
-      name: Helper – nächster geplanter Ladestart (lesbar)
-      default: input_text.twizy_1_naechster_ladestart
-      selector:
-        entity:
-          domain: input_text
-
-    socket_zuordnung_geprueft_helper:
-      name: Helper – aktuelle Zuordnung verifiziert (dieses Fahrzeug)
-      description: >
-        Eigener Helper je Fahrzeug (nicht mit dem anderen Fahrzeug teilen!),
-        sonst gilt eine erfolgreiche Verifikation fälschlich für beide.
-      default: input_boolean.twizy_1_zuordnung_geprueft
-      selector:
-        entity:
-          domain: input_boolean
-
     location_sensor:
       name: Standort-Entität dieses Fahrzeugs
       description: >
@@ -293,19 +224,6 @@ blueprint:
       selector:
         entity:
           domain: [device_tracker, sensor]
-
-    connectivity_probe_enabled_helper:
-      name: Helper – Verbindungsprüfung nach Ankunft aktiv
-      description: >
-        Schaltet die Verbindungsprüfung nach Ankunft (siehe unten) für
-        dieses Fahrzeug komplett ein/aus. Bei "aus" wird nur noch bei
-        regulären preis-/deadline-getriebenen Ladeversuchen verifiziert
-        (Benachrichtigung kommt dann ggf. erst zum tatsächlichen
-        Ladestart).
-      default: input_boolean.twizy_1_verbindungspruefung_aktiv
-      selector:
-        entity:
-          domain: input_boolean
 
     connectivity_probe_window:
       name: Zeitfenster für Verbindungsprüfung nach Ankunft
@@ -324,32 +242,6 @@ blueprint:
         minutes: 10
       selector:
         duration: {}
-
-    min_on_minutes_helper:
-      name: Helper – Mindest-Einschaltzeit pro Tag (Minuten)
-      description: >
-        Auch wenn das Fahrzeug bereits voll geladen ist, wird die Steckdose
-        an mindestens so vielen Minuten pro Tag eingeschaltet (zur
-        günstigsten verbleibenden Zeit). 0 deaktiviert diese Mindestzeit.
-      default: input_number.twizy_1_mindestlaufzeit_minuten
-      selector:
-        entity:
-          domain: input_number
-
-    on_time_today_minutes_helper:
-      name: Helper – Einschaltzeit heute (Minuten, intern)
-      description: Wird automatisch bei jedem Ausschalten fortgeschrieben.
-      default: input_number.twizy_1_einschaltzeit_minuten_heute
-      selector:
-        entity:
-          domain: input_number
-
-    on_time_today_date_helper:
-      name: Helper – Datum des Einschaltzeit-Zählers (intern)
-      default: input_datetime.twizy_1_einschaltzeit_tag
-      selector:
-        entity:
-          domain: input_datetime
 
     check_interval:
       name: Prüfintervall
@@ -377,55 +269,70 @@ variables:
   soc_sensor: !input soc_sensor
   soc_full_threshold: !input soc_full_threshold
   etr_full_sensor: !input etr_full_sensor
+  correction_factor_soc_threshold: !input correction_factor_soc_threshold
   charge_state_sensor: !input charge_state_sensor
   charging_state_values: !input charging_state_values
   verification_grace_period: !input verification_grace_period
-  departure_time_monday_helper: !input departure_time_monday_helper
-  departure_time_tuesday_helper: !input departure_time_tuesday_helper
-  departure_time_wednesday_helper: !input departure_time_wednesday_helper
-  departure_time_thursday_helper: !input departure_time_thursday_helper
-  departure_time_friday_helper: !input departure_time_friday_helper
-  departure_time_saturday_helper: !input departure_time_saturday_helper
-  departure_time_sunday_helper: !input departure_time_sunday_helper
+  location_sensor: !input location_sensor
+  connectivity_probe_window: !input connectivity_probe_window
+  # Alle folgenden Helper-Entity-IDs folgen im Paket
+  # packages/twizy_charging.yaml durchgängig dem Muster
+  # "<domain>.<vehicle_id>_<suffix>" - werden daher aus vehicle_id
+  # abgeleitet statt (fehleranfällig) pro Automatisierungs-Instanz einzeln
+  # konfiguriert zu werden müssen.
   # Reihenfolge passend zu Python/Jinja now().weekday(): 0=Montag..6=Sonntag.
   departure_time_weekday_helpers: >-
-    {{ [departure_time_monday_helper, departure_time_tuesday_helper,
-        departure_time_wednesday_helper, departure_time_thursday_helper,
-        departure_time_friday_helper, departure_time_saturday_helper,
-        departure_time_sunday_helper] }}
-  use_custom_duration_helper: !input use_custom_duration_helper
-  custom_duration_helper: !input custom_duration_helper
-  manual_flag_helper: !input manual_flag_helper
-  ladeplan_helper: !input ladeplan_helper
-  next_start_helper: !input next_start_helper
-  socket_zuordnung_geprueft_helper: !input socket_zuordnung_geprueft_helper
-  location_sensor: !input location_sensor
-  connectivity_probe_enabled_helper: !input connectivity_probe_enabled_helper
-  connectivity_probe_window: !input connectivity_probe_window
-  min_on_minutes_helper: !input min_on_minutes_helper
-  on_time_today_minutes_helper: !input on_time_today_minutes_helper
-  on_time_today_date_helper: !input on_time_today_date_helper
+    {{ ['input_datetime.' ~ vehicle_id ~ '_abfahrtszeit_montag',
+        'input_datetime.' ~ vehicle_id ~ '_abfahrtszeit_dienstag',
+        'input_datetime.' ~ vehicle_id ~ '_abfahrtszeit_mittwoch',
+        'input_datetime.' ~ vehicle_id ~ '_abfahrtszeit_donnerstag',
+        'input_datetime.' ~ vehicle_id ~ '_abfahrtszeit_freitag',
+        'input_datetime.' ~ vehicle_id ~ '_abfahrtszeit_samstag',
+        'input_datetime.' ~ vehicle_id ~ '_abfahrtszeit_sonntag'] }}
+  use_custom_duration_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_eigene_ladedauer_verwenden' }}"
+  custom_duration_helper: "{{ 'input_number.' ~ vehicle_id ~ '_eigene_ladedauer_minuten' }}"
+  manual_flag_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_manuelles_laden' }}"
+  ladeplan_helper: "{{ 'input_text.' ~ vehicle_id ~ '_ladeplan_offsets' }}"
+  next_start_helper: "{{ 'input_text.' ~ vehicle_id ~ '_naechster_ladestart' }}"
+  socket_zuordnung_geprueft_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_zuordnung_geprueft' }}"
+  connectivity_probe_enabled_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_verbindungspruefung_aktiv' }}"
+  min_on_minutes_helper: "{{ 'input_number.' ~ vehicle_id ~ '_mindestlaufzeit_minuten' }}"
+  on_time_today_minutes_helper: "{{ 'input_number.' ~ vehicle_id ~ '_einschaltzeit_minuten_heute' }}"
+  on_time_today_date_helper: "{{ 'input_datetime.' ~ vehicle_id ~ '_einschaltzeit_tag' }}"
+  correction_factor_helper: "{{ 'input_number.' ~ vehicle_id ~ '_ladezeit_korrekturfaktor' }}"
+  session_start_etr_helper: "{{ 'input_number.' ~ vehicle_id ~ '_sitzung_start_etr_minuten' }}"
 
 trigger:
   - platform: time_pattern
     minutes: !input check_interval
     id: periodic
   # ^ check_interval ist ein Wildcard-String wie "/10" ("alle 10 Minuten")
+  # Die Helper-Entity-IDs sind nicht mehr eigene Blueprint-Inputs (siehe
+  # variables oben), Trigger brauchen aber statische entity_ids - deshalb
+  # hier hart beide Fahrzeuge gelistet, unabhängig davon für welches
+  # vehicle_id diese Instanz konkret läuft. Unschädlich: löst die Instanz
+  # dadurch gelegentlich für Änderungen am jeweils anderen Fahrzeug aus,
+  # die Prüfung im action-Teil verwendet ohnehin nur die eigenen Helper.
   - platform: state
     entity_id:
-      - !input departure_time_monday_helper
-      - !input departure_time_tuesday_helper
-      - !input departure_time_wednesday_helper
-      - !input departure_time_thursday_helper
-      - !input departure_time_friday_helper
-      - !input departure_time_saturday_helper
-      - !input departure_time_sunday_helper
-    id: periodic
-  - platform: state
-    entity_id: !input use_custom_duration_helper
-    id: periodic
-  - platform: state
-    entity_id: !input custom_duration_helper
+      - input_datetime.twizy_1_abfahrtszeit_montag
+      - input_datetime.twizy_1_abfahrtszeit_dienstag
+      - input_datetime.twizy_1_abfahrtszeit_mittwoch
+      - input_datetime.twizy_1_abfahrtszeit_donnerstag
+      - input_datetime.twizy_1_abfahrtszeit_freitag
+      - input_datetime.twizy_1_abfahrtszeit_samstag
+      - input_datetime.twizy_1_abfahrtszeit_sonntag
+      - input_datetime.twizy_2_abfahrtszeit_montag
+      - input_datetime.twizy_2_abfahrtszeit_dienstag
+      - input_datetime.twizy_2_abfahrtszeit_mittwoch
+      - input_datetime.twizy_2_abfahrtszeit_donnerstag
+      - input_datetime.twizy_2_abfahrtszeit_freitag
+      - input_datetime.twizy_2_abfahrtszeit_samstag
+      - input_datetime.twizy_2_abfahrtszeit_sonntag
+      - input_boolean.twizy_1_eigene_ladedauer_verwenden
+      - input_boolean.twizy_2_eigene_ladedauer_verwenden
+      - input_number.twizy_1_eigene_ladedauer_minuten
+      - input_number.twizy_2_eigene_ladedauer_minuten
     id: periodic
   - platform: state
     entity_id: !input charge_state_sensor
@@ -483,7 +390,7 @@ action:
         sequence:
           - service: input_boolean.turn_on
             target:
-              entity_id: !input manual_flag_helper
+              entity_id: "{{ manual_flag_helper }}"
       - conditions:
           - condition: trigger
             id: switch_off
@@ -492,7 +399,7 @@ action:
         sequence:
           - service: input_boolean.turn_off
             target:
-              entity_id: !input manual_flag_helper
+              entity_id: "{{ manual_flag_helper }}"
           # Tages-Einschaltzeit fortschreiben (Grundlage für die
           # Mindest-Einschaltzeit pro Tag, siehe unten). trigger.from_state
           # ist der "on"-Zustand vor dem Ausschalten, sein last_changed also
@@ -504,14 +411,49 @@ action:
               prior_today_minutes: "{{ (states(on_time_today_minutes_helper) | float(0)) if stored_date_str == today_date_str else 0 }}"
           - service: input_number.set_value
             target:
-              entity_id: !input on_time_today_minutes_helper
+              entity_id: "{{ on_time_today_minutes_helper }}"
             data:
               value: "{{ prior_today_minutes + session_minutes }}"
           - service: input_datetime.set_datetime
             target:
-              entity_id: !input on_time_today_date_helper
+              entity_id: "{{ on_time_today_date_helper }}"
             data:
               date: "{{ today_date_str }}"
+          # Ladezeit-Korrekturfaktor: nur aktualisieren, wenn diese Ladung
+          # bis mindestens correction_factor_soc_threshold gekommen ist und
+          # beim Einschalten eine gültige OVMS-Restzeitschätzung vorlag
+          # (session_start_etr_helper, siehe switch_on-Schritt unten).
+          - variables:
+              final_soc: "{{ states(soc_sensor) | float(0) }}"
+              predicted_etr_minutes: "{{ states(session_start_etr_helper) | float(0) }}"
+              correction_ratio: >-
+                {{ [[session_minutes / predicted_etr_minutes, 0.3] | max, 3.0] | min if predicted_etr_minutes > 0 else none }}
+          - if:
+              - condition: template
+                value_template: "{{ final_soc >= correction_factor_soc_threshold and correction_ratio is not none }}"
+            then:
+              - variables:
+                  updated_correction_factor: "{{ ((states(correction_factor_helper) | float(1.0)) * 0.7) + (correction_ratio * 0.3) }}"
+              - service: input_number.set_value
+                target:
+                  entity_id: "{{ correction_factor_helper }}"
+                data:
+                  value: "{{ updated_correction_factor }}"
+
+  # OVMS-Restzeitschätzung bei Ladestart merken (Basis für den
+  # Ladezeit-Korrekturfaktor oben) - unabhängig davon, ob manuell oder
+  # automatisch eingeschaltet wurde.
+  - if:
+      - condition: trigger
+        id: switch_on
+      - condition: template
+        value_template: "{{ trigger.entity_id == current_switch }}"
+    then:
+      - service: input_number.set_value
+        target:
+          entity_id: "{{ session_start_etr_helper }}"
+        data:
+          value: "{{ states(etr_full_sensor) | float(0) if states(etr_full_sensor) not in ['unknown', 'unavailable', 'none', ''] else 0 }}"
 
   # Tibber-Stundenpreise heute+morgen abrufen. Die Tibber-Integration ruft
   # die eigentliche Tibber-API dabei nur auf, wenn die angefragten Daten
@@ -531,7 +473,7 @@ action:
 
   - variables:
       ovms_etr_val: "{{ states(etr_full_sensor) }}"
-      duration_minutes: "{{ (states(custom_duration_helper) | float(120)) if (is_state(use_custom_duration_helper, 'on') or ovms_etr_val in ['unknown', 'unavailable', 'none', '']) else (ovms_etr_val | float(120)) }}"
+      duration_minutes: "{{ (states(custom_duration_helper) | float(120)) if (is_state(use_custom_duration_helper, 'on') or ovms_etr_val in ['unknown', 'unavailable', 'none', '']) else ((ovms_etr_val | float(120)) * (states(correction_factor_helper) | float(1.0))) }}"
       # Abfahrtszeit ist pro Wochentag einstellbar. Konvention: 00:00 Uhr an
       # einem Tag bedeutet "an diesem Tag kein Ladebedarf" (kein Auto-Fahren
       # geplant) - ohne dafür einen eigenen "aktiv"-Helper zu brauchen. Es
@@ -556,9 +498,11 @@ action:
         {{ ns.items }}
       has_real_deadline: "{{ deadline_candidate_epochs | count > 0 }}"
       # Kein Tag der nächsten Woche mit Ladebedarf -> Deadline weit in der
-      # Zukunft ansetzen (verhindert Aufhol-Logik/Preis-Suche ohne echtes
-      # Ziel); tatsächliches automatisches Laden wird unten über
-      # has_real_deadline unterbunden, manuelles Einschalten bleibt möglich.
+      # Zukunft ansetzen. Dadurch greift unten keine Aufhol-Logik
+      # (must_charge_now), Preis-basiertes Laden (should_charge_price)
+      # bleibt aber unbeschränkt aktiv - es wird dann einfach zu den
+      # günstigsten Stunden innerhalb der bereits bekannten Preisdaten
+      # geladen.
       # Bewusst als Unix-Epoch-Zahl (nicht als Datetime-Objekt): Home
       # Assistant rendert jede variables-Zuweisung zu einem String und
       # versucht ihn danach zurückzuparsen - Zahlen/Listen überstehen das,
@@ -642,8 +586,12 @@ action:
            is_home and not is_full and has_real_deadline and
            not is_state(socket_zuordnung_geprueft_helper, 'on') and
            seconds_since_arrival <= connectivity_probe_window_seconds }}
+      # should_charge_price ist bewusst NICHT an has_real_deadline gekoppelt:
+      # ohne gesetzte Abfahrtszeit soll trotzdem zu den günstigsten bereits
+      # bekannten Stunden geladen werden (nur die Aufhol-Logik
+      # must_charge_now braucht eine echte Deadline, um sinnvoll zu sein).
       should_charge_now: >-
-        {{ (not is_full and (is_manual or (has_real_deadline and (should_charge_price or must_charge_now or connectivity_probe_needed)))) or
+        {{ (not is_full and (is_manual or should_charge_price or (has_real_deadline and must_charge_now) or connectivity_probe_needed)) or
            (is_full and maintenance_hour_now) }}
       # Lesbare Anzeige "wann ist der nächste Ladestart" (siehe
       # next_start_helper unten): laufende Ladung -> "jetzt", sonst die
@@ -674,18 +622,18 @@ action:
     then:
       - service: input_boolean.turn_off
         target:
-          entity_id: !input manual_flag_helper
+          entity_id: "{{ manual_flag_helper }}"
 
   - service: input_text.set_value
     target:
-      entity_id: !input ladeplan_helper
+      entity_id: "{{ ladeplan_helper }}"
     data:
       value: >-
         {{ ('h' ~ (plan_offsets | map('string') | join(';')))[:255] }}
 
   - service: input_text.set_value
     target:
-      entity_id: !input next_start_helper
+      entity_id: "{{ next_start_helper }}"
     data:
       value: "{{ (next_charge_start_text | string)[:255] }}"
 
@@ -700,7 +648,7 @@ action:
           # beobachteten "lädt aktiv"-Zustand bestätigt worden.
           - service: input_boolean.turn_off
             target:
-              entity_id: !input socket_zuordnung_geprueft_helper
+              entity_id: "{{ socket_zuordnung_geprueft_helper }}"
           - service: switch.turn_on
             target:
               entity_id: "{{ current_switch }}"
@@ -720,7 +668,7 @@ action:
         sequence:
           - service: input_boolean.turn_on
             target:
-              entity_id: !input socket_zuordnung_geprueft_helper
+              entity_id: "{{ socket_zuordnung_geprueft_helper }}"
           - service: persistent_notification.dismiss
             data:
               notification_id: "twizy_{{ vehicle_id }}_zuordnung_warnung"
