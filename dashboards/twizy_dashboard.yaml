@@ -1,116 +1,107 @@
-# Twizy Ladesteuerung – fertiges Dashboard
-#
-# Nutzt ausschließlich eingebaute Lovelace-Karten (keine HACS-Zusatzkarten
-# nötig). Referenziert genau die Entity-IDs aus packages/twizy_charging.yaml
-# - falls du dort Namen geändert hast, hier entsprechend anpassen.
-#
-# Einbinden:
-#   1. Einstellungen → Dashboards → "+ Dashboard hinzufügen" →
-#      "Neues Dashboard von Grund auf erstellen" (Titel z. B. "Twizy").
-#   2. Das neue Dashboard öffnen, oben rechts die drei Punkte →
-#      "Dashboard bearbeiten" → drei Punkte → "Raw-Konfigurationseditor".
-#   3. Den gesamten Inhalt dieser Datei einfügen (vorhandenen Inhalt
-#      ersetzen) und speichern.
-#
-# Alternativ: Inhalt unter "views:" in ein bestehendes Dashboard/eine
-# bestehende View übernehmen, falls du es nicht als eigenes Dashboard willst.
-
 title: Twizy Ladesteuerung
 views:
   - title: Twizy
     path: twizy
     icon: mdi:car-electric
-    cards:
-      - type: entities
-        title: Twizy 1 – Status
-        entities:
-          - entity: input_text.twizy_1_naechster_ladestart
-            name: Nächster Ladestart
-
-      - type: entities
-        title: Twizy 1 – Abfahrtszeiten
-        entities:
-          - entity: input_datetime.twizy_1_abfahrtszeit_montag
-            name: Montag
-          - entity: input_datetime.twizy_1_abfahrtszeit_dienstag
-            name: Dienstag
-          - entity: input_datetime.twizy_1_abfahrtszeit_mittwoch
-            name: Mittwoch
-          - entity: input_datetime.twizy_1_abfahrtszeit_donnerstag
-            name: Donnerstag
-          - entity: input_datetime.twizy_1_abfahrtszeit_freitag
-            name: Freitag
-          - entity: input_datetime.twizy_1_abfahrtszeit_samstag
-            name: Samstag
-          - entity: input_datetime.twizy_1_abfahrtszeit_sonntag
-            name: Sonntag
-
-      - type: entities
-        title: Twizy 1 – Einstellungen
-        entities:
-          - entity: input_boolean.twizy_1_eigene_ladedauer_verwenden
-            name: Eigene Ladedauer statt OVMS-Schätzung
-          - entity: input_number.twizy_1_eigene_ladedauer_minuten
-            name: Eigene Ladedauer (Minuten)
-          - entity: input_number.twizy_1_mindestlaufzeit_minuten
-            name: Mindest-Einschaltzeit pro Tag
-          - type: divider
-          - entity: input_boolean.twizy_1_manuelles_laden
-            name: Manuelles Laden aktiv (Status)
-          - entity: input_number.twizy_1_einschaltzeit_minuten_heute
-            name: Einschaltzeit heute (Debug)
-          - entity: input_text.twizy_1_ladeplan_offsets
-            name: Aktueller Ladeplan (Debug)
-
-      - type: entities
-        title: Twizy 2 – Status
-        entities:
-          - entity: input_text.twizy_2_naechster_ladestart
-            name: Nächster Ladestart
-
-      - type: entities
-        title: Twizy 2 – Abfahrtszeiten
-        entities:
-          - entity: input_datetime.twizy_2_abfahrtszeit_montag
-            name: Montag
-          - entity: input_datetime.twizy_2_abfahrtszeit_dienstag
-            name: Dienstag
-          - entity: input_datetime.twizy_2_abfahrtszeit_mittwoch
-            name: Mittwoch
-          - entity: input_datetime.twizy_2_abfahrtszeit_donnerstag
-            name: Donnerstag
-          - entity: input_datetime.twizy_2_abfahrtszeit_freitag
-            name: Freitag
-          - entity: input_datetime.twizy_2_abfahrtszeit_samstag
-            name: Samstag
-          - entity: input_datetime.twizy_2_abfahrtszeit_sonntag
-            name: Sonntag
-
-      - type: entities
-        title: Twizy 2 – Einstellungen
-        entities:
-          - entity: input_boolean.twizy_2_eigene_ladedauer_verwenden
-            name: Eigene Ladedauer statt OVMS-Schätzung
-          - entity: input_number.twizy_2_eigene_ladedauer_minuten
-            name: Eigene Ladedauer (Minuten)
-          - entity: input_number.twizy_2_mindestlaufzeit_minuten
-            name: Mindest-Einschaltzeit pro Tag
-          - type: divider
-          - entity: input_boolean.twizy_2_manuelles_laden
-            name: Manuelles Laden aktiv (Status)
-          - entity: input_number.twizy_2_einschaltzeit_minuten_heute
-            name: Einschaltzeit heute (Debug)
-          - entity: input_text.twizy_2_ladeplan_offsets
-            name: Aktueller Ladeplan (Debug)
-
-      - type: entities
-        title: Gemeinsam
-        entities:
-          - entity: input_select.twizy_socket_innen_belegt_durch
-            name: Steckdose "innen" belegt durch
-          - entity: input_select.twizy_socket_aussen_belegt_durch
-            name: Steckdose "außen" belegt durch
-          - entity: input_boolean.twizy_socket_zuordnung_geprueft
-            name: Zuordnung verifiziert (Status)
-          - entity: input_number.twizy_max_gesamtleistung_watt
-            name: Max. Gesamtleistung Stromkreis
+    cards: []
+    type: sections
+    max_columns: 4
+    show_icon_and_title: true
+    sections:
+      - type: grid
+        cards:
+          - type: entities
+            title: Twizy 1 – Status
+            entities:
+              - entity: input_text.twizy_1_naechster_ladestart
+                name: Nächster Ladestart
+          - type: entities
+            title: Twizy 1 – Abfahrtszeiten
+            entities:
+              - entity: input_datetime.twizy_1_abfahrtszeit_montag
+                name: Montag
+              - entity: input_datetime.twizy_1_abfahrtszeit_dienstag
+                name: Dienstag
+              - entity: input_datetime.twizy_1_abfahrtszeit_mittwoch
+                name: Mittwoch
+              - entity: input_datetime.twizy_1_abfahrtszeit_donnerstag
+                name: Donnerstag
+              - entity: input_datetime.twizy_1_abfahrtszeit_freitag
+                name: Freitag
+              - entity: input_datetime.twizy_1_abfahrtszeit_samstag
+                name: Samstag
+              - entity: input_datetime.twizy_1_abfahrtszeit_sonntag
+                name: Sonntag
+          - type: entities
+            title: Twizy 1 – Einstellungen
+            entities:
+              - entity: input_boolean.twizy_1_eigene_ladedauer_verwenden
+                name: Eigene Ladedauer statt OVMS-Schätzung
+              - entity: input_number.twizy_1_eigene_ladedauer_minuten
+                name: Eigene Ladedauer (Minuten)
+              - entity: input_number.twizy_1_mindestlaufzeit_minuten
+                name: Mindest-Einschaltzeit pro Tag
+              - type: divider
+              - entity: input_boolean.twizy_1_manuelles_laden
+                name: Manuelles Laden aktiv (Status)
+              - entity: input_number.twizy_1_einschaltzeit_minuten_heute
+                name: Einschaltzeit heute (Debug)
+              - entity: input_text.twizy_1_ladeplan_offsets
+                name: Aktueller Ladeplan (Debug)
+      - type: grid
+        cards:
+          - type: heading
+            heading: Neuer Abschnitt
+          - type: entities
+            title: Allgemein
+            entities:
+              - entity: input_select.twizy_socket_innen_belegt_durch
+                name: Steckdose "innen" belegt durch
+              - entity: input_select.twizy_socket_aussen_belegt_durch
+                name: Steckdose "außen" belegt durch
+              - entity: input_boolean.twizy_socket_zuordnung_geprueft
+                name: Zuordnung verifiziert (Status)
+              - entity: input_number.twizy_max_gesamtleistung_watt
+                name: Max. Gesamtleistung Stromkreis
+      - type: grid
+        cards:
+          - type: heading
+            heading: Neuer Abschnitt
+          - type: entities
+            title: Twizy 2 – Status
+            entities:
+              - entity: input_text.twizy_2_naechster_ladestart
+                name: Nächster Ladestart
+          - type: entities
+            title: Twizy 2 – Abfahrtszeiten
+            entities:
+              - entity: input_datetime.twizy_2_abfahrtszeit_montag
+                name: Montag
+              - entity: input_datetime.twizy_2_abfahrtszeit_dienstag
+                name: Dienstag
+              - entity: input_datetime.twizy_2_abfahrtszeit_mittwoch
+                name: Mittwoch
+              - entity: input_datetime.twizy_2_abfahrtszeit_donnerstag
+                name: Donnerstag
+              - entity: input_datetime.twizy_2_abfahrtszeit_freitag
+                name: Freitag
+              - entity: input_datetime.twizy_2_abfahrtszeit_samstag
+                name: Samstag
+              - entity: input_datetime.twizy_2_abfahrtszeit_sonntag
+                name: Sonntag
+          - type: entities
+            title: Twizy 2 – Einstellungen
+            entities:
+              - entity: input_boolean.twizy_2_eigene_ladedauer_verwenden
+                name: Eigene Ladedauer statt OVMS-Schätzung
+              - entity: input_number.twizy_2_eigene_ladedauer_minuten
+                name: Eigene Ladedauer (Minuten)
+              - entity: input_number.twizy_2_mindestlaufzeit_minuten
+                name: Mindest-Einschaltzeit pro Tag
+              - type: divider
+              - entity: input_boolean.twizy_2_manuelles_laden
+                name: Manuelles Laden aktiv (Status)
+              - entity: input_number.twizy_2_einschaltzeit_minuten_heute
+                name: Einschaltzeit heute (Debug)
+              - entity: input_text.twizy_2_ladeplan_offsets
+                name: Aktueller Ladeplan (Debug)
