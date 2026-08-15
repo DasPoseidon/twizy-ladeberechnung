@@ -214,6 +214,13 @@ Fahrzeug wird pro Prüfzyklus (Default alle 10 min) berechnet:
   wird unabhängig vom Preis sofort weiter geladen, damit die Deadline nicht
   gerissen wird.
 
+**Wann ist der nächste Ladestart?** Jeder Prüfzyklus schreibt eine lesbare
+Kurzfassung in `twizy_{1,2}_naechster_ladestart` (im Dashboard als "Status"
+zuoberst): `Lädt jetzt`, ein Zeitpunkt wie `Di 20.08. 03:00`, oder `Kein
+Ladebedarf geplant`. Das ist der aktuelle Planungsstand – ändern sich
+Preise, SoC oder die Zuordnung, wird der Wert beim nächsten Zyklus neu
+berechnet, ist also keine feste Zusage.
+
 **Tage ohne Ladebedarf:** Steht die Abfahrtszeit eines Tages auf **00:00
 Uhr**, gilt das als "an diesem Tag kein Ladebedarf" – ohne dafür einen
 eigenen zusätzlichen Helper zu brauchen. Der Lade-Scheduler überspringt

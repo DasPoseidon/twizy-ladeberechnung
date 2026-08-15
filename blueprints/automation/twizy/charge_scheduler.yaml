@@ -266,6 +266,13 @@ blueprint:
         entity:
           domain: input_text
 
+    next_start_helper:
+      name: Helper – nächster geplanter Ladestart (lesbar)
+      default: input_text.twizy_1_naechster_ladestart
+      selector:
+        entity:
+          domain: input_text
+
     socket_zuordnung_geprueft_helper:
       name: Helper – Steckdosenzuordnung verifiziert
       default: input_boolean.twizy_socket_zuordnung_geprueft
@@ -345,6 +352,7 @@ variables:
   custom_duration_helper: !input custom_duration_helper
   manual_flag_helper: !input manual_flag_helper
   ladeplan_helper: !input ladeplan_helper
+  next_start_helper: !input next_start_helper
   socket_zuordnung_geprueft_helper: !input socket_zuordnung_geprueft_helper
   min_on_minutes_helper: !input min_on_minutes_helper
   on_time_today_minutes_helper: !input on_time_today_minutes_helper
@@ -568,6 +576,17 @@ action:
       should_charge_now: >-
         {{ (not is_full and (is_manual or (has_real_deadline and (should_charge_price or must_charge_now)))) or
            (is_full and maintenance_hour_now) }}
+      # Lesbare Anzeige "wann ist der nächste Ladestart" (siehe
+      # next_start_helper unten): laufende Ladung -> "jetzt", sonst die
+      # früheste geplante Stunde aus dem jeweils zutreffenden Plan.
+      next_charge_start_epoch_hour: >-
+        {{ current_epoch_hour if should_charge_now else
+           ((plan_offsets | min) if (not is_full and plan_offsets) else
+           ((maintenance_plan_offsets | min) if (is_full and maintenance_plan_offsets) else none)) }}
+      next_charge_start_text: >-
+        {{ 'Lädt jetzt' if should_charge_now else
+           (as_local(as_datetime(next_charge_start_epoch_hour * 3600)).strftime('%a %d.%m. %H:%M')
+            if next_charge_start_epoch_hour is not none else 'Kein Ladebedarf geplant') }}
       # Verifikation "erwartetes Fahrzeug lädt tatsächlich" über den
       # OVMS-Lade-/Fahrzustand statt eines (oft nicht vorhandenen)
       # Kabel-gesteckt-Sensors.
@@ -594,6 +613,12 @@ action:
     data:
       value: >-
         {{ ('h' ~ (plan_offsets | map('string') | join(';')))[:255] }}
+
+  - service: input_text.set_value
+    target:
+      entity_id: !input next_start_helper
+    data:
+      value: "{{ (next_charge_start_text | string)[:255] }}"
 
   - choose:
       - conditions:

@@ -22,6 +22,12 @@ views:
     icon: mdi:car-electric
     cards:
       - type: entities
+        title: Twizy 1 – Status
+        entities:
+          - entity: input_text.twizy_1_naechster_ladestart
+            name: Nächster Ladestart
+
+      - type: entities
         title: Twizy 1 – Abfahrtszeiten
         entities:
           - entity: input_datetime.twizy_1_abfahrtszeit_montag
@@ -55,6 +61,12 @@ views:
             name: Einschaltzeit heute (Debug)
           - entity: input_text.twizy_1_ladeplan_offsets
             name: Aktueller Ladeplan (Debug)
+
+      - type: entities
+        title: Twizy 2 – Status
+        entities:
+          - entity: input_text.twizy_2_naechster_ladestart
+            name: Nächster Ladestart
 
       - type: entities
         title: Twizy 2 – Abfahrtszeiten

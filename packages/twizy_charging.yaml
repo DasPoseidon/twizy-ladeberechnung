@@ -269,3 +269,15 @@ input_text:
   twizy_2_ladeplan_offsets:
     name: "Twizy 2 – aktuell geplante Lade-Epoch-Stunden (informativ/Debug)"
     max: 255
+
+  # Lesbare Anzeige, wann die Steckdose als nächstes (wieder) angeht -
+  # "Lädt jetzt", ein Zeitpunkt, oder "Kein Ladebedarf geplant".
+  twizy_1_naechster_ladestart:
+    name: "Twizy 1 – Nächster geplanter Ladestart"
+    icon: mdi:calendar-clock-outline
+    max: 255
+
+  twizy_2_naechster_ladestart:
+    name: "Twizy 2 – Nächster geplanter Ladestart"
+    icon: mdi:calendar-clock-outline
+    max: 255
