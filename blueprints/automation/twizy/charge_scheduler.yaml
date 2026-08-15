@@ -13,8 +13,13 @@ blueprint:
        gepflegter Minutenwert.
     3. Bestimmt die nächste Abfahrtszeit (Deadline) aus dem
        Abfahrtszeit-Helper des aktuellen bzw. (falls die heutige Zeit schon
-       verstrichen ist) des morgigen Wochentags – für jeden Wochentag ist
-       eine eigene Abfahrtszeit einstellbar.
+       verstrichen ist) eines der nächsten Tage – für jeden Wochentag ist
+       eine eigene Abfahrtszeit einstellbar. Steht ein Tag auf 00:00 Uhr,
+       gilt das als "an diesem Tag kein Ladebedarf"; es wird bis zu eine
+       Woche vorausgeschaut, bis ein Tag mit einer Zeit ungleich 00:00
+       gefunden wird. Sind alle 7 Tage auf 00:00 gesetzt, lädt die
+       Automatisierung nicht automatisch (manuelles Einschalten und die
+       tägliche Mindest-Einschaltzeit funktionieren weiterhin).
     4. Ruft den Service `tibber.get_prices` auf (liefert Stundenpreise für
        heute+morgen als Service-Response, kein eigener Preis-Cache nötig)
        und wählt daraus die günstigsten Stunden bis zur Deadline, die in
@@ -471,17 +476,34 @@ action:
   - variables:
       ovms_etr_val: "{{ states(etr_full_sensor) }}"
       duration_minutes: "{{ (states(custom_duration_helper) | float(120)) if (is_state(use_custom_duration_helper, 'on') or ovms_etr_val in ['unknown', 'unavailable', 'none', '']) else (ovms_etr_val | float(120)) }}"
-      # Abfahrtszeit ist pro Wochentag einstellbar: den Helper des heutigen
-      # Wochentags nehmen; ist die heutige Zeit schon verstrichen, den
-      # Helper des morgigen Wochentags (kann einen anderen Wert haben als
-      # heute).
-      dep_time_state_today: "{{ states(departure_time_weekday_helpers[now().weekday()]) }}"
-      dep_today: "{{ now().replace(hour=(dep_time_state_today.split(':')[0] | int), minute=(dep_time_state_today.split(':')[1] | int), second=0, microsecond=0) }}"
-      dep_time_state_tomorrow: "{{ states(departure_time_weekday_helpers[(now().weekday() + 1) % 7]) }}"
-      dep_tomorrow: >-
-        {{ (now() + timedelta(days=1)).replace(hour=(dep_time_state_tomorrow.split(':')[0] | int),
-           minute=(dep_time_state_tomorrow.split(':')[1] | int), second=0, microsecond=0) }}
-      deadline: "{{ dep_today if dep_today > now() else dep_tomorrow }}"
+      # Abfahrtszeit ist pro Wochentag einstellbar. Konvention: 00:00 Uhr an
+      # einem Tag bedeutet "an diesem Tag kein Ladebedarf" (kein Auto-Fahren
+      # geplant) - ohne dafür einen eigenen "aktiv"-Helper zu brauchen. Es
+      # wird bis zu eine Woche vorausgeschaut und der erste Tag (beginnend
+      # heute) mit einer Zeit ungleich 00:00 gesucht, der noch in der
+      # Zukunft liegt. deadline_candidate_epochs ist bewusst eine Liste
+      # (kein Datum direkt), damit der Wert beim Rendern zuverlässig als
+      # echte Liste erhalten bleibt statt versehentlich in einen String
+      # verwandelt zu werden.
+      deadline_candidate_epochs: >
+        {% set ns = namespace(items=[]) %}
+        {% for day_offset in range(0, 8) %}
+          {% set idx = (now().weekday() + day_offset) % 7 %}
+          {% set t = states(departure_time_weekday_helpers[idx]) %}
+          {% if t not in ['00:00:00', 'unknown', 'unavailable', 'none', ''] %}
+            {% set candidate = (now() + timedelta(days=day_offset)).replace(hour=(t.split(':')[0] | int), minute=(t.split(':')[1] | int), second=0, microsecond=0) %}
+            {% if candidate > now() %}
+              {% set ns.items = ns.items + [candidate.timestamp()] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+      has_real_deadline: "{{ deadline_candidate_epochs | count > 0 }}"
+      # Kein Tag der nächsten Woche mit Ladebedarf -> Deadline weit in der
+      # Zukunft ansetzen (verhindert Aufhol-Logik/Preis-Suche ohne echtes
+      # Ziel); tatsächliches automatisches Laden wird unten über
+      # has_real_deadline unterbunden, manuelles Einschalten bleibt möglich.
+      deadline: "{{ as_datetime(deadline_candidate_epochs[0]) if has_real_deadline else (now() + timedelta(days=3650)) }}"
       soc: "{{ states(soc_sensor) | float(0) }}"
       is_full: "{{ soc >= (soc_full_threshold | float) }}"
       is_manual: "{{ is_state(manual_flag_helper, 'on') }}"
@@ -529,16 +551,22 @@ action:
       on_time_today_effective: "{{ (states(on_time_today_minutes_helper) | float(0)) if states(on_time_today_date_helper) == now().strftime('%Y-%m-%d') else 0 }}"
       remaining_min_on_minutes: "{{ [((states(min_on_minutes_helper) | float(0)) - on_time_today_effective), 0] | max }}"
       maintenance_needed_slots: "{{ [((remaining_min_on_minutes / 60) | round(0, 'ceil') | int), 0] | max }}"
+      # Fenster für die Mindest-Einschaltzeit bewusst auf "heute" begrenzt
+      # (unabhängig davon, wie weit die echte Lade-Deadline entfernt ist -
+      # sonst könnte der Auffüll-Vorgang beliebig weit in die Zukunft
+      # verschoben werden, obwohl die Mindestzeit pro TAG gemeint ist).
+      today_last_epoch_hour: "{{ (now().replace(hour=23, minute=0, second=0, microsecond=0).timestamp() | int) // 3600 }}"
+      maintenance_window_end_epoch_hour: "{{ [deadline_epoch_hour, today_last_epoch_hour] | min }}"
       maintenance_cheapest_in_window: >
         {{ (price_entries
             | selectattr('epoch_hour', 'ge', current_epoch_hour)
-            | selectattr('epoch_hour', 'le', deadline_epoch_hour)
+            | selectattr('epoch_hour', 'le', maintenance_window_end_epoch_hour)
             | list
             | sort(attribute='price'))[:maintenance_needed_slots | int] }}
       maintenance_plan_offsets: "{{ maintenance_cheapest_in_window | map(attribute='epoch_hour') | list | sort }}"
       maintenance_hour_now: "{{ current_epoch_hour in maintenance_plan_offsets }}"
       should_charge_now: >-
-        {{ (not is_full and (is_manual or should_charge_price or must_charge_now)) or
+        {{ (not is_full and (is_manual or (has_real_deadline and (should_charge_price or must_charge_now)))) or
            (is_full and maintenance_hour_now) }}
       # Verifikation "erwartetes Fahrzeug lädt tatsächlich" über den
       # OVMS-Lade-/Fahrzustand statt eines (oft nicht vorhandenen)

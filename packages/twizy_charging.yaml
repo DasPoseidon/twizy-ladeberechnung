@@ -77,6 +77,11 @@ input_boolean:
 # nächsten Tages - der Lade-Scheduler braucht aber jederzeit (auch nachts)
 # die tatsächliche nächste Abfahrtszeit, um das Preisfenster korrekt zu
 # berechnen.
+#
+# Konvention: 00:00 Uhr an einem Tag = an diesem Tag kein Ladebedarf (ohne
+# dafür einen eigenen "aktiv"-Helper zu brauchen). Der Lade-Scheduler
+# schaut dann bis zu eine Woche voraus, bis er einen Tag mit einer Zeit
+# ungleich 00:00 findet.
 # ---------------------------------------------------------------------------
 input_datetime:
   twizy_1_abfahrtszeit_montag:

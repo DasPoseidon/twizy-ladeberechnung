@@ -201,8 +201,8 @@ Die Abfahrtszeit ist **pro Wochentag einzeln einstellbar** (7 Helper je
 Fahrzeug, `twizy_{1,2}_abfahrtszeit_montag` … `_sonntag`). Für jedes
 Fahrzeug wird pro Prüfzyklus (Default alle 10 min) berechnet:
 - die Deadline: die Abfahrtszeit des heutigen Wochentags – ist die schon
-  verstrichen, die des morgigen Wochentags (der einen anderen Wert haben
-  kann als heute).
+  verstrichen (oder liegt kein Ladebedarf vor, s. u.), wird bis zu eine
+  Woche vorausgeschaut.
 - benötigte Ladedauer: standardmäßig die von OVMS geschätzte Restzeit bis
   voll; per Schalter-Helper (`twizy_{1,2}_eigene_ladedauer_verwenden`) auf
   einen selbst gepflegten Minutenwert (`twizy_{1,2}_eigene_ladedauer_minuten`)
@@ -213,6 +213,17 @@ Fahrzeug wird pro Prüfzyklus (Default alle 10 min) berechnet:
   mehr aus, um die benötigte Dauer allein aus günstigen Stunden zu decken,
   wird unabhängig vom Preis sofort weiter geladen, damit die Deadline nicht
   gerissen wird.
+
+**Tage ohne Ladebedarf:** Steht die Abfahrtszeit eines Tages auf **00:00
+Uhr**, gilt das als "an diesem Tag kein Ladebedarf" – ohne dafür einen
+eigenen zusätzlichen Helper zu brauchen. Der Lade-Scheduler überspringt
+diesen Tag dann bei der Deadline-Suche und schaut bis zu eine Woche voraus,
+bis er einen Tag mit einer Zeit ungleich 00:00 findet (die Ladeplanung
+kann dabei durchaus schon an den "arbeitsfreien" Tagen dazwischen
+stattfinden, wenn das günstiger ist). Sind alle 7 Tage auf 00:00 gesetzt,
+lädt die Automatisierung nicht automatisch – manuelles Einschalten und die
+tägliche Mindest-Einschaltzeit (siehe unten) funktionieren trotzdem
+weiterhin.
 
 **Warum kein `schedule`-Helper?** Ein `schedule`-Helper wäre naheliegend,
 hat hier aber einen Haken: Sein `next_event`-Attribut zeigt außerhalb des
