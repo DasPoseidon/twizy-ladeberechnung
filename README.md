@@ -115,7 +115,7 @@ Leistungssensor der jeweils anderen Steckdose.
    | Blueprint | Wie oft anlegen | Wichtige Eingaben |
    |---|---|---|
    | Steckdosen-Zuordnung | 1× | Standort- & Moving-Sensoren beider Fahrzeuge |
-   | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren **des jeweiligen Fahrzeugs**, beide Schalter + beide Leistungssensoren, sowie bei der zweiten Instanz die `twizy_2_*`-Helper statt der `twizy_1_*`-Defaults auswählen |
+   | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren + Standort-Entität **des jeweiligen Fahrzeugs**, beide Schalter + beide Leistungssensoren, sowie bei der zweiten Instanz die `twizy_2_*`-Helper statt der `twizy_1_*`-Defaults auswählen |
 
 4. In den Helpern (`Einstellungen → Geräte & Dienste → Helfer`) die
    Abfahrtszeiten pro Wochentag (`twizy_{1,2}_abfahrtszeit_montag` …
@@ -183,18 +183,34 @@ in der Praxis also ungefähr **1× pro Tag** (Quelle:
   konfigurierbaren Zeitfensters (Default 15 min), wird ein Platztausch
   angenommen und die Zuordnung vertauscht.
 
-### Verifikation zu Ladebeginn
+### Verifikation zu Ladebeginn & Benachrichtigung bei fehlendem Anschluss
 Da kein zuverlässiger "Kabel gesteckt"-Sensor vorausgesetzt wird, erfolgt
 die Verifikation *nach* dem Einschalten, anhand des OVMS-Lade-/Fahrzustands:
 Meldet der Sensor des zugeordneten Fahrzeugs innerhalb der Toleranzzeit
 (Default 15 min) einen "lädt aktiv"-Wert (Default nur `charging`,
-konfigurierbar), gilt die Zuordnung als bestätigt
-(`input_boolean.twizy_socket_zuordnung_geprueft` → an). Passiert das nicht,
-wird davon ausgegangen, dass die Zuordnung falsch ist: Die Steckdose wird
-wieder ausgeschaltet und eine Benachrichtigung ausgelöst (dedupliziert über
-eine feste `notification_id`, kein Spam bei wiederholten Versuchen). Der
-nächste Prüfzyklus versucht es automatisch erneut, bis entweder die
-Zuordnung korrigiert wurde oder tatsächlich geladen wird.
+konfigurierbar), gilt die aktuelle Zuordnung als bestätigt
+(`input_boolean.twizy_{1,2}_zuordnung_geprueft` → an – **ein eigener Helper
+je Fahrzeug**, nicht geteilt, sonst würde eine erfolgreiche Verifikation
+von Fahrzeug 1 fälschlich auch für Fahrzeug 2 gelten). Passiert das nicht,
+wird die Steckdose wieder ausgeschaltet und eine Benachrichtigung
+ausgelöst (dedupliziert über eine feste `notification_id`, kein Spam bei
+wiederholten Versuchen) – mit Hinweis auf die beiden möglichen Ursachen:
+falsche Zuordnung *oder* Fahrzeug nicht angeschlossen. `socket_assignment.yaml`
+setzt den jeweiligen Verifikations-Helper bei jeder neuen Zuordnung
+(Ankunft oder Platztausch) zurück, damit auch ein Steckdosenwechsel erneut
+geprüft wird.
+
+Damit "zuhause + Ladebedarf, aber nicht angeschlossen" nicht erst kurz vor
+einer knappen Deadline auffällt (wo die Aufhol-Logik ohnehin einen
+Ladeversuch – und damit eine Verifikation – auslösen würde), gibt es
+zusätzlich eine **Verbindungsprüfung kurz nach Ankunft**: Innerhalb eines
+Zeitfensters (`connectivity_probe_window`, Default 60 min) nach Ankunft
+zuhause wird bei echtem Ladebedarf und noch unverifizierter Zuordnung
+unabhängig vom Strompreis kurz versucht einzuschalten, rein um die
+Verbindung zu testen. Nach diesem Zeitfenster wird dafür nicht mehr
+automatisch eingeschaltet (nur noch preis-/deadline-getrieben) – sonst
+würde die Steckdose bei einem tatsächlich dauerhaft nicht angeschlossenen
+Fahrzeug den ganzen Tag über alle paar Minuten klicken.
 
 ### Preisoptimiertes Laden & Abfahrtszeit
 Die Abfahrtszeit ist **pro Wochentag einzeln einstellbar** (7 Helper je
@@ -311,6 +327,12 @@ wieder eingeschaltet werden soll.
   fahrzeugspezifischen Werten (Akkukapazität, Ladeleistung, Temperatur-
   Einfluss o. Ä.) befüllt werden – aktuell trägt man dort einen Minutenwert
   von Hand ein.
+- Die Verbindungsprüfung nach Ankunft kann ohne echten Kabel-Sensor nicht
+  zwischen "nicht angeschlossen" und "falsche Zuordnung" unterscheiden –
+  die Benachrichtigung nennt beide als mögliche Ursache. Innerhalb des
+  Prüfzeitfensters kann die Steckdose dabei mehrfach kurz an-/ausgehen
+  (jeder Prüfzyklus versucht es erneut), falls das Fahrzeug tatsächlich
+  nicht angeschlossen ist.
 
 ## Repository-Struktur
 

@@ -42,8 +42,16 @@ input_select:
 # Status-Flags
 # ---------------------------------------------------------------------------
 input_boolean:
-  twizy_socket_zuordnung_geprueft:
-    name: "Twizy Steckdosenzuordnung zu Ladebeginn verifiziert"
+  # Pro Fahrzeug ein eigener Helfer (nicht geteilt!) - sonst würde eine
+  # erfolgreiche Verifikation von Fahrzeug 1 fälschlich auch für Fahrzeug 2
+  # als "verifiziert" gelten.
+  twizy_1_zuordnung_geprueft:
+    name: "Twizy 1 – aktuelle Steckdosenzuordnung verifiziert"
+    icon: mdi:check-decagram
+    initial: false
+
+  twizy_2_zuordnung_geprueft:
+    name: "Twizy 2 – aktuelle Steckdosenzuordnung verifiziert"
     icon: mdi:check-decagram
     initial: false
 

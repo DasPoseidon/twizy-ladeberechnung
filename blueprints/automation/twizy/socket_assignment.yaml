@@ -77,6 +77,24 @@ blueprint:
         entity:
           domain: input_select
 
+    twizy_1_zuordnung_geprueft_helper:
+      name: Helper – Twizy 1 Zuordnung verifiziert
+      description: >
+        Wird bei jeder neuen Zuordnung dieses Fahrzeugs auf "aus" gesetzt,
+        damit der Lade-Scheduler die neue Zuordnung erneut verifiziert
+        (siehe Blueprint "Twizy: Lade-Scheduler").
+      default: input_boolean.twizy_1_zuordnung_geprueft
+      selector:
+        entity:
+          domain: input_boolean
+
+    twizy_2_zuordnung_geprueft_helper:
+      name: Helper – Twizy 2 Zuordnung verifiziert
+      default: input_boolean.twizy_2_zuordnung_geprueft
+      selector:
+        entity:
+          domain: input_boolean
+
 variables:
   twizy_1_location: !input twizy_1_location
   twizy_2_location: !input twizy_2_location
@@ -85,6 +103,8 @@ variables:
   short_trip_window: !input short_trip_window
   innen_socket_helper: !input innen_socket_helper
   aussen_socket_helper: !input aussen_socket_helper
+  twizy_1_zuordnung_geprueft_helper: !input twizy_1_zuordnung_geprueft_helper
+  twizy_2_zuordnung_geprueft_helper: !input twizy_2_zuordnung_geprueft_helper
 
 trigger:
   - platform: state
@@ -113,6 +133,9 @@ action:
           - condition: trigger
             id: arrival_1
         sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input twizy_1_zuordnung_geprueft_helper
           - service: input_select.select_option
             target:
               entity_id: !input aussen_socket_helper
@@ -123,6 +146,9 @@ action:
                 entity_id: !input twizy_2_location
                 state: "home"
             then:
+              - service: input_boolean.turn_off
+                target:
+                  entity_id: !input twizy_2_zuordnung_geprueft_helper
               - service: input_select.select_option
                 target:
                   entity_id: !input innen_socket_helper
@@ -133,6 +159,9 @@ action:
           - condition: trigger
             id: arrival_2
         sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input twizy_2_zuordnung_geprueft_helper
           - service: input_select.select_option
             target:
               entity_id: !input aussen_socket_helper
@@ -143,6 +172,9 @@ action:
                 entity_id: !input twizy_1_location
                 state: "home"
             then:
+              - service: input_boolean.turn_off
+                target:
+                  entity_id: !input twizy_1_zuordnung_geprueft_helper
               - service: input_select.select_option
                 target:
                   entity_id: !input innen_socket_helper
@@ -165,6 +197,11 @@ action:
                  (now() - states[twizy_2_moving_sensor].last_changed).total_seconds()
                  <= timedelta(**short_trip_window).total_seconds() }}
         sequence: &swap
+          - service: input_boolean.turn_off
+            target:
+              entity_id:
+                - !input twizy_1_zuordnung_geprueft_helper
+                - !input twizy_2_zuordnung_geprueft_helper
           - variables:
               current_innen: "{{ states(innen_socket_helper) }}"
               current_aussen: "{{ states(aussen_socket_helper) }}"

@@ -44,6 +44,8 @@ views:
               - type: divider
               - entity: input_boolean.twizy_1_manuelles_laden
                 name: Manuelles Laden aktiv (Status)
+              - entity: input_boolean.twizy_1_zuordnung_geprueft
+                name: Zuordnung verifiziert (Status)
               - entity: input_number.twizy_1_einschaltzeit_minuten_heute
                 name: Einschaltzeit heute (Debug)
               - entity: input_text.twizy_1_ladeplan_offsets
@@ -59,8 +61,6 @@ views:
                 name: Steckdose "innen" belegt durch
               - entity: input_select.twizy_socket_aussen_belegt_durch
                 name: Steckdose "außen" belegt durch
-              - entity: input_boolean.twizy_socket_zuordnung_geprueft
-                name: Zuordnung verifiziert (Status)
               - entity: input_number.twizy_max_gesamtleistung_watt
                 name: Max. Gesamtleistung Stromkreis
       - type: grid
@@ -101,6 +101,8 @@ views:
               - type: divider
               - entity: input_boolean.twizy_2_manuelles_laden
                 name: Manuelles Laden aktiv (Status)
+              - entity: input_boolean.twizy_2_zuordnung_geprueft
+                name: Zuordnung verifiziert (Status)
               - entity: input_number.twizy_2_einschaltzeit_minuten_heute
                 name: Einschaltzeit heute (Debug)
               - entity: input_text.twizy_2_ladeplan_offsets

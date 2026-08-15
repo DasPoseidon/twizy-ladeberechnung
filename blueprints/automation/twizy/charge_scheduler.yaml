@@ -274,11 +274,42 @@ blueprint:
           domain: input_text
 
     socket_zuordnung_geprueft_helper:
-      name: Helper – Steckdosenzuordnung verifiziert
-      default: input_boolean.twizy_socket_zuordnung_geprueft
+      name: Helper – aktuelle Zuordnung verifiziert (dieses Fahrzeug)
+      description: >
+        Eigener Helper je Fahrzeug (nicht mit dem anderen Fahrzeug teilen!),
+        sonst gilt eine erfolgreiche Verifikation fälschlich für beide.
+      default: input_boolean.twizy_1_zuordnung_geprueft
       selector:
         entity:
           domain: input_boolean
+
+    location_sensor:
+      name: Standort-Entität dieses Fahrzeugs
+      description: >
+        device_tracker/Zone-Sensor der OVMS-Integration (Zustand
+        "home"/"not_home"), wie auch im Blueprint "Steckdosen-Zuordnung"
+        verwendet. Dient hier nur der Verbindungsprüfung nach Ankunft
+        (siehe unten).
+      selector:
+        entity:
+          domain: [device_tracker, sensor]
+
+    connectivity_probe_window:
+      name: Zeitfenster für Verbindungsprüfung nach Ankunft
+      description: >
+        Wie lange nach der Ankunft zuhause automatisch (unabhängig vom
+        Preis) kurz versucht wird einzuschalten, um zu prüfen, ob das
+        Fahrzeug tatsächlich angeschlossen ist - nur falls noch echter
+        Ladebedarf besteht und die Zuordnung noch nicht verifiziert wurde.
+        Schlägt das fehl, kommt die Benachrichtigung "möglicherweise nicht
+        angeschlossen". Danach wird nicht mehr automatisch dafür
+        eingeschaltet (nur noch regulär preis-/deadline-getrieben), um die
+        Steckdose nicht dauerhaft alle paar Minuten klicken zu lassen, wenn
+        das Fahrzeug tatsächlich nicht angeschlossen ist.
+      default:
+        minutes: 60
+      selector:
+        duration: {}
 
     min_on_minutes_helper:
       name: Helper – Mindest-Einschaltzeit pro Tag (Minuten)
@@ -354,6 +385,8 @@ variables:
   ladeplan_helper: !input ladeplan_helper
   next_start_helper: !input next_start_helper
   socket_zuordnung_geprueft_helper: !input socket_zuordnung_geprueft_helper
+  location_sensor: !input location_sensor
+  connectivity_probe_window: !input connectivity_probe_window
   min_on_minutes_helper: !input min_on_minutes_helper
   on_time_today_minutes_helper: !input on_time_today_minutes_helper
   on_time_today_date_helper: !input on_time_today_date_helper
@@ -577,8 +610,24 @@ action:
             | sort(attribute='price'))[:maintenance_needed_slots | int] }}
       maintenance_plan_offsets: "{{ maintenance_cheapest_in_window | map(attribute='epoch_hour') | list | sort }}"
       maintenance_hour_now: "{{ current_epoch_hour in maintenance_plan_offsets }}"
+      # Verbindungsprüfung: kurz nach Ankunft zuhause (innerhalb
+      # connectivity_probe_window) einmalig unabhängig vom Preis testweise
+      # einschalten, wenn echter Ladebedarf besteht und die aktuelle
+      # Zuordnung noch nicht verifiziert wurde - so fällt "zuhause, muss
+      # laden, aber nicht angeschlossen" zeitnah auf statt erst kurz vor
+      # der Deadline (Aufhol-Logik). Nach dem Zeitfenster wird dafür nicht
+      # mehr automatisch eingeschaltet (verhindert dauerhaftes Klicken der
+      # Steckdose bei tatsächlich nicht angeschlossenem Fahrzeug); reguläre
+      # Preis-/Deadline-Versuche verifizieren aber weiterhin normal mit.
+      is_home: "{{ is_state(location_sensor, 'home') }}"
+      seconds_since_arrival: "{{ (now() - states[location_sensor].last_changed).total_seconds() if is_home else 0 }}"
+      connectivity_probe_window_seconds: "{{ timedelta(**connectivity_probe_window).total_seconds() }}"
+      connectivity_probe_needed: >-
+        {{ is_home and not is_full and has_real_deadline and
+           not is_state(socket_zuordnung_geprueft_helper, 'on') and
+           seconds_since_arrival <= connectivity_probe_window_seconds }}
       should_charge_now: >-
-        {{ (not is_full and (is_manual or (has_real_deadline and (should_charge_price or must_charge_now)))) or
+        {{ (not is_full and (is_manual or (has_real_deadline and (should_charge_price or must_charge_now or connectivity_probe_needed)))) or
            (is_full and maintenance_hour_now) }}
       # Lesbare Anzeige "wann ist der nächste Ladestart" (siehe
       # next_start_helper unten): laufende Ladung -> "jetzt", sonst die
@@ -669,16 +718,19 @@ action:
           - service: persistent_notification.create
             data:
               notification_id: "twizy_{{ vehicle_id }}_zuordnung_warnung"
-              title: "Twizy Ladesteuerung: Zuordnung prüfen"
+              title: "Twizy Ladesteuerung: Laden prüfen"
               message: >
                 {{ vehicle_id }} sollte laut Zuordnung an der Steckdose
                 {{ 'innen' if current_switch == innen_switch else 'außen' }}
                 laden, meldet laut OVMS-Lade-/Fahrzustand aber seit
                 {{ (verification_grace_seconds / 60) | round(0) | int }}
-                Minuten keinen "lädt aktiv"-Zustand. Steckdose wurde
-                sicherheitshalber wieder ausgeschaltet – bitte
-                input_select-Zuordnung prüfen/korrigieren. (Wird beim
-                nächsten Prüfzyklus automatisch erneut versucht.)
+                Minuten keinen "lädt aktiv"-Zustand. Mögliche Ursachen:
+                Fahrzeug ist nicht angeschlossen, oder die
+                input_select-Zuordnung stimmt nicht. Steckdose wurde
+                sicherheitshalber wieder ausgeschaltet. (Wird beim
+                nächsten Prüfzyklus automatisch erneut versucht, sofern
+                Preis/Deadline oder das Verbindungsprüfungs-Zeitfenster
+                das hergeben.)
 
 mode: single
 max_exceeded: silent
