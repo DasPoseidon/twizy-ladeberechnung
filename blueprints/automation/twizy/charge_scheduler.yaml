@@ -511,7 +511,11 @@ action:
       # Zukunft ansetzen (verhindert Aufhol-Logik/Preis-Suche ohne echtes
       # Ziel); tatsächliches automatisches Laden wird unten über
       # has_real_deadline unterbunden, manuelles Einschalten bleibt möglich.
-      deadline: "{{ as_datetime(deadline_candidate_epochs[0]) if has_real_deadline else (now() + timedelta(days=3650)) }}"
+      # Bewusst als Unix-Epoch-Zahl (nicht als Datetime-Objekt): Home
+      # Assistant rendert jede variables-Zuweisung zu einem String und
+      # versucht ihn danach zurückzuparsen - Zahlen/Listen überstehen das,
+      # ein Datetime-Objekt nicht (wird zu einem nicht mehr nutzbaren Text).
+      deadline_epoch: "{{ deadline_candidate_epochs[0] if has_real_deadline else (now().timestamp() + 3650 * 86400) }}"
       soc: "{{ states(soc_sensor) | float(0) }}"
       is_full: "{{ soc >= (soc_full_threshold | float) }}"
       is_manual: "{{ is_state(manual_flag_helper, 'on') }}"
@@ -524,10 +528,10 @@ action:
       would_overload_if_started: >-
         {{ is_state(other_switch, 'on') and
            ((states(other_power_sensor) | float(0)) + typical_power_watt) > (states(max_power_helper) | float(3000)) }}
-      minutes_to_deadline: "{{ (deadline - now()).total_seconds() / 60 }}"
+      minutes_to_deadline: "{{ (deadline_epoch - now().timestamp()) / 60 }}"
       must_charge_now: "{{ minutes_to_deadline <= (duration_minutes + 5) }}"
       current_epoch_hour: "{{ (now().timestamp() | int) // 3600 }}"
-      deadline_epoch_hour: "{{ (deadline.timestamp() | int) // 3600 }}"
+      deadline_epoch_hour: "{{ (deadline_epoch | int) // 3600 }}"
       # Preise aus der Service-Response von tibber.get_prices (oben) bauen.
       # Antwortformat: {"prices": {"<Home-Name>": [{"start_time": ..., "price": ...}, ...]}}.
       # Nur das erste Zuhause wird verwendet (Setup mit einer Tibber-Zählstelle).
