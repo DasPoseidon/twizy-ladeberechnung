@@ -71,7 +71,7 @@ views:
             entities:
               - entity: sensor.twizygarage_twizystecker_innen_leistung
                 name: "Innen"
-              - entity: sensor.twizygarage_twizystecker_außen_leistung
+              - entity: sensor.twizygarage_twizystecker_aussen_leistung
                 name: "Außen"
       - type: grid
         cards:
