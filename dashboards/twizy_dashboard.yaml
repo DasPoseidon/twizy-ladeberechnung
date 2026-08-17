@@ -15,8 +15,6 @@ views:
             entities:
               - entity: input_text.twizy_1_naechster_ladestart
                 name: Nächster Ladestart
-              - entity: input_number.twizy_1_aktueller_ladestrom_watt
-                name: Aktueller Ladestrom
           - type: entities
             title: Twizy 1 – Abfahrtszeiten
             entities:
@@ -69,6 +67,18 @@ views:
                 name: Steckdose "außen" belegt durch
               - entity: input_number.twizy_max_gesamtleistung_watt
                 name: Max. Gesamtleistung Stromkreis
+          - type: entities
+            title: Ladestrom & SoC
+            entities:
+              - entity: input_number.twizy_socket_innen_ladestrom_watt
+                name: "Innen: Ladestrom"
+              - entity: input_number.twizy_socket_innen_soc_prozent
+                name: "Innen: SoC"
+              - type: divider
+              - entity: input_number.twizy_socket_aussen_ladestrom_watt
+                name: "Außen: Ladestrom"
+              - entity: input_number.twizy_socket_aussen_soc_prozent
+                name: "Außen: SoC"
       - type: grid
         cards:
           - type: heading
@@ -78,8 +88,6 @@ views:
             entities:
               - entity: input_text.twizy_2_naechster_ladestart
                 name: Nächster Ladestart
-              - entity: input_number.twizy_2_aktueller_ladestrom_watt
-                name: Aktueller Ladestrom
           - type: entities
             title: Twizy 2 – Abfahrtszeiten
             entities:

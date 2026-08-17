@@ -340,7 +340,13 @@ variables:
   correction_factor_helper: "{{ 'input_number.' ~ vehicle_id ~ '_ladezeit_korrekturfaktor' }}"
   session_start_etr_helper: "{{ 'input_number.' ~ vehicle_id ~ '_sitzung_start_etr_minuten' }}"
   charging_finished_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_ladevorgang_fertig' }}"
-  current_power_display_helper: "{{ 'input_number.' ~ vehicle_id ~ '_aktueller_ladestrom_watt' }}"
+  # Dashboard-Anzeigen nach Steckdose (nicht nach Fahrzeug) sortiert - daher
+  # feste Entity-IDs statt aus vehicle_id abgeleitet: innen/außen sind
+  # dieselben physischen Steckdosen für beide Automatisierungs-Instanzen.
+  socket_innen_power_display_helper: input_number.twizy_socket_innen_ladestrom_watt
+  socket_aussen_power_display_helper: input_number.twizy_socket_aussen_ladestrom_watt
+  socket_innen_soc_display_helper: input_number.twizy_socket_innen_soc_prozent
+  socket_aussen_soc_display_helper: input_number.twizy_socket_aussen_soc_prozent
 
 trigger:
   - platform: time_pattern
@@ -384,9 +390,9 @@ trigger:
       - !input innen_power_sensor
       - !input aussen_power_sensor
     id: periodic
-  # ^ hält die Ladestrom-Anzeige im Dashboard aktuell (siehe
-  #   current_power_display_helper) und wertet die untenstehende
-  #   Ladeschluss-Erkennung zügig neu aus.
+  # ^ hält die Ladestrom-/SoC-Anzeige im Dashboard aktuell (siehe
+  #   socket_*_power_display_helper/socket_*_soc_display_helper) und wertet
+  #   die untenstehende Ladeschluss-Erkennung zügig neu aus.
   - platform: numeric_state
     entity_id:
       - !input innen_power_sensor
@@ -747,11 +753,30 @@ action:
     data:
       value: "{{ (next_charge_start_text | string)[:255] }}"
 
+  # Dashboard-Anzeigen nach Steckdose sortiert (nicht nach Fahrzeug): innen/
+  # außen sind dieselbe Hardware für beide Automatisierungs-Instanzen, daher
+  # schreiben hier beide Instanzen redundant denselben Wert - unschädlich.
   - service: input_number.set_value
     target:
-      entity_id: "{{ current_power_display_helper }}"
+      entity_id: "{{ socket_innen_power_display_helper }}"
     data:
-      value: "{{ states(current_power_sensor) | float(0) if states(current_power_sensor) not in ['unknown', 'unavailable', 'none', ''] else 0 }}"
+      value: "{{ states(innen_power_sensor) | float(0) if states(innen_power_sensor) not in ['unknown', 'unavailable', 'none', ''] else 0 }}"
+
+  - service: input_number.set_value
+    target:
+      entity_id: "{{ socket_aussen_power_display_helper }}"
+    data:
+      value: "{{ states(aussen_power_sensor) | float(0) if states(aussen_power_sensor) not in ['unknown', 'unavailable', 'none', ''] else 0 }}"
+
+  # SoC-Anzeige pro Steckdose: nur die aktuell zugeordnete Instanz schreibt
+  # ihren eigenen SoC in den Helper der Steckdose, an der sie gerade hängt
+  # (current_switch ist an dieser Stelle bereits als zugeordnet bestätigt,
+  # siehe stop-Guard ganz oben).
+  - service: input_number.set_value
+    target:
+      entity_id: "{{ socket_innen_soc_display_helper if states(innen_socket_helper) == vehicle_id else socket_aussen_soc_display_helper }}"
+    data:
+      value: "{{ soc }}"
 
   - choose:
       - conditions:

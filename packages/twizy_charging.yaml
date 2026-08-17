@@ -318,12 +318,13 @@ input_number:
     unit_of_measurement: min
     mode: box
 
-  # Aktueller Ladestrom der jeweils zugeordneten Steckdose (informativ,
-  # Dashboard) - wird vom Lade-Scheduler bei jeder Auswertung aus dem
-  # Leistungssensor der aktuell zugeordneten Steckdose übernommen. Dient
-  # auch als Grundlage der Ladeschluss-Erkennung (siehe Blueprint).
-  twizy_1_aktueller_ladestrom_watt:
-    name: "Twizy 1 – aktueller Ladestrom"
+  # Aktueller Ladestrom je Steckdose (informativ, Dashboard) - wird vom
+  # Lade-Scheduler bei jeder Auswertung direkt aus dem jeweiligen
+  # Leistungssensor übernommen (unabhängig davon, welches Fahrzeug gerade
+  # zugeordnet ist). Dient auch als Grundlage der Ladeschluss-Erkennung
+  # (siehe Blueprint).
+  twizy_socket_innen_ladestrom_watt:
+    name: "Steckdose Innen – aktueller Ladestrom"
     icon: mdi:flash
     min: 0
     max: 4000
@@ -331,13 +332,34 @@ input_number:
     unit_of_measurement: W
     mode: box
 
-  twizy_2_aktueller_ladestrom_watt:
-    name: "Twizy 2 – aktueller Ladestrom"
+  twizy_socket_aussen_ladestrom_watt:
+    name: "Steckdose Außen – aktueller Ladestrom"
     icon: mdi:flash
     min: 0
     max: 4000
     step: 1
     unit_of_measurement: W
+    mode: box
+
+  # SoC des jeweils an dieser Steckdose zugeordneten Fahrzeugs (informativ,
+  # Dashboard) - wird von der jeweils zugeordneten Lade-Scheduler-Instanz
+  # geschrieben.
+  twizy_socket_innen_soc_prozent:
+    name: "Steckdose Innen – SoC des zugeordneten Fahrzeugs"
+    icon: mdi:battery-charging-medium
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    mode: box
+
+  twizy_socket_aussen_soc_prozent:
+    name: "Steckdose Außen – SoC des zugeordneten Fahrzeugs"
+    icon: mdi:battery-charging-medium
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
     mode: box
 
 # ---------------------------------------------------------------------------

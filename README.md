@@ -355,9 +355,13 @@ voll ist), gilt diese zusätzliche Bedingung nicht – nur das
 "eigentlich fertig, SoC-Schwelle erreicht"-Abschalten wartet auf die
 Strom-Bestätigung.
 
-Der aktuelle Ladestrom der zugeordneten Steckdose wird dafür laufend in
-`twizy_{1,2}_aktueller_ladestrom_watt` gespiegelt und im Dashboard oben bei
-"Status" angezeigt.
+Der aktuelle Ladestrom wird dafür laufend in
+`twizy_socket_{innen,aussen}_ladestrom_watt` gespiegelt und im Dashboard in
+der mittleren Spalte unter "Ladestrom & SoC" angezeigt – nach Steckdose
+sortiert statt nach Fahrzeug, da Ladestrom und SoC physisch an der
+Steckdose hängen, nicht am (wechselnden) zugeordneten Fahrzeug. Aus
+demselben Grund steht dort auch der SoC des jeweils zugeordneten Fahrzeugs
+(`twizy_socket_{innen,aussen}_soc_prozent`).
 
 Zusätzlich gibt es eine einstellbare **Mindest-Einschaltzeit pro Tag**
 (`twizy_{1,2}_mindestlaufzeit_minuten`, Default 30 min, 0 deaktiviert die
