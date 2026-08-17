@@ -150,6 +150,32 @@ Leistungssensor der jeweils anderen Steckdose.
    Helper-Namen im Paket änderst, müssen die `entity:`-Zeilen in der
    Dashboard-Datei entsprechend angepasst werden.
 
+## Wichtig: Helper-Werte bleiben jetzt über Neustarts hinweg erhalten
+
+Frühere Versionen von `packages/twizy_charging.yaml` hatten bei jedem Helfer
+ein `initial:` gesetzt (z. B. `initial: "07:00:00"` bei den
+Abfahrtszeiten). Das ist ein bekanntes, leicht zu übersehendes
+Home-Assistant-Verhalten: **ist bei einem YAML-`input_*`-Helfer `initial:`
+gesetzt, wird bei *jedem* Neustart bzw. Config-Reload zwangsweise dieser
+Wert verwendet – der zuvor eingestellte Wert wird dabei verworfen, nicht
+wiederhergestellt.** Ohne `initial:` stellt Home Assistant dagegen den
+zuletzt gesetzten Wert nach einem Neustart automatisch wieder her (offiziell
+dokumentiertes Verhalten der `input_*`-Integrationen). Das erklärte "die
+Einstellungen setzen sich ständig zurück" – vor allem die Abfahrtszeiten,
+die man ja typischerweise mal einstellt und dann lange nicht mehr anfasst,
+bis zum nächsten Neustart/Reload.
+
+Alle `initial:`-Einträge im Helper-Paket wurden deshalb entfernt. Nach dem
+Aktualisieren auf diese Version:
+1. `packages/twizy_charging.yaml` in der HA-Konfiguration ersetzen und neu
+   laden (YAML neu laden reicht, Neustart nicht zwingend nötig für die
+   Umstellung selbst).
+2. Alle Helper-Werte (Abfahrtszeiten, Mindestlaufzeit, Schalter usw.) **ein
+   letztes Mal** wie gewünscht setzen – der zuletzt vor dieser Umstellung
+   gesetzte Wert könnte durch einen vorherigen Reset bereits auf dem alten
+   `initial`-Wert stehen.
+3. Ab jetzt bleiben diese Werte über Neustarts/Reloads hinweg erhalten.
+
 ## Verhalten im Detail
 
 ### Tibber-Preise

@@ -5,6 +5,16 @@
 # persistent halten. Blueprints selbst können keinen eigenen Zustand speichern,
 # deshalb übernehmen diese Helper die Rolle des "Gedächtnisses".
 #
+# WICHTIG: Bewusst OHNE "initial:" bei den Helfern unten. Home Assistant
+# stellt den letzten Zustand eines input_*-Helfers nach einem Neustart/Reload
+# nur dann wieder her, wenn KEIN "initial:" gesetzt ist - ist "initial:"
+# gesetzt, wird bei JEDEM Neustart/Reload zwangsweise dieser Wert verwendet
+# und der zuvor eingestellte Wert verworfen (offizielles HA-Verhalten, kein
+# Bug). Ohne "initial:" fallen frisch angelegte Helfer beim allerersten Mal
+# auf einen Domain-Standard zurück (z. B. false, 0/Minimalwert, "unbekannt"),
+# was hier überall unkritisch ist - die Blueprints behandeln
+# unknown/unavailable/Minimalwerte ohnehin defensiv.
+#
 # Einbinden in configuration.yaml:
 #
 #   homeassistant:
@@ -27,7 +37,6 @@ input_select:
       - "twizy_1"
       - "twizy_2"
       - "unbekannt"
-    initial: "unbekannt"
 
   twizy_socket_aussen_belegt_durch:
     name: "Twizy Steckdose Außen – belegt durch"
@@ -36,7 +45,6 @@ input_select:
       - "twizy_1"
       - "twizy_2"
       - "unbekannt"
-    initial: "unbekannt"
 
 # ---------------------------------------------------------------------------
 # Status-Flags
@@ -48,42 +56,34 @@ input_boolean:
   twizy_1_zuordnung_geprueft:
     name: "Twizy 1 – aktuelle Steckdosenzuordnung verifiziert"
     icon: mdi:check-decagram
-    initial: false
 
   twizy_2_zuordnung_geprueft:
     name: "Twizy 2 – aktuelle Steckdosenzuordnung verifiziert"
     icon: mdi:check-decagram
-    initial: false
 
   twizy_1_verbindungspruefung_aktiv:
     name: "Twizy 1 – Verbindungsprüfung nach Ankunft aktiv"
     icon: mdi:power-plug-outline
-    initial: true
 
   twizy_2_verbindungspruefung_aktiv:
     name: "Twizy 2 – Verbindungsprüfung nach Ankunft aktiv"
     icon: mdi:power-plug-outline
-    initial: true
 
   twizy_1_manuelles_laden:
     name: "Twizy 1 – manuell gestartetes Laden aktiv"
     icon: mdi:hand-back-right
-    initial: false
 
   twizy_2_manuelles_laden:
     name: "Twizy 2 – manuell gestartetes Laden aktiv"
     icon: mdi:hand-back-right
-    initial: false
 
   twizy_1_eigene_ladedauer_verwenden:
     name: "Twizy 1 – selbst berechnete Ladedauer statt OVMS-Schätzung verwenden"
     icon: mdi:calculator
-    initial: false
 
   twizy_2_eigene_ladedauer_verwenden:
     name: "Twizy 2 – selbst berechnete Ladedauer statt OVMS-Schätzung verwenden"
     icon: mdi:calculator
-    initial: false
 
 # ---------------------------------------------------------------------------
 # Zeitpläne / Sollwerte
@@ -99,7 +99,10 @@ input_boolean:
 # Konvention: 00:00 Uhr an einem Tag = an diesem Tag kein Ladebedarf (ohne
 # dafür einen eigenen "aktiv"-Helper zu brauchen). Der Lade-Scheduler
 # schaut dann bis zu eine Woche voraus, bis er einen Tag mit einer Zeit
-# ungleich 00:00 findet.
+# ungleich 00:00 findet. Passt praktischerweise auch zum HA-Restore-Fallback
+# ohne "initial:" (siehe Hinweis oben): ein ganz frisch angelegter Helfer
+# fällt auf 00:00:00 zurück, was hier automatisch "kein Ladebedarf" bedeutet
+# statt eine falsche Uhrzeit vorzutäuschen.
 # ---------------------------------------------------------------------------
 input_datetime:
   twizy_1_abfahrtszeit_montag:
@@ -107,86 +110,72 @@ input_datetime:
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
   twizy_1_abfahrtszeit_dienstag:
     name: "Twizy 1 – Abfahrtszeit Dienstag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
   twizy_1_abfahrtszeit_mittwoch:
     name: "Twizy 1 – Abfahrtszeit Mittwoch"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
   twizy_1_abfahrtszeit_donnerstag:
     name: "Twizy 1 – Abfahrtszeit Donnerstag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
   twizy_1_abfahrtszeit_freitag:
     name: "Twizy 1 – Abfahrtszeit Freitag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
   twizy_1_abfahrtszeit_samstag:
     name: "Twizy 1 – Abfahrtszeit Samstag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
   twizy_1_abfahrtszeit_sonntag:
     name: "Twizy 1 – Abfahrtszeit Sonntag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
 
   twizy_2_abfahrtszeit_montag:
     name: "Twizy 2 – Abfahrtszeit Montag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
   twizy_2_abfahrtszeit_dienstag:
     name: "Twizy 2 – Abfahrtszeit Dienstag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
   twizy_2_abfahrtszeit_mittwoch:
     name: "Twizy 2 – Abfahrtszeit Mittwoch"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
   twizy_2_abfahrtszeit_donnerstag:
     name: "Twizy 2 – Abfahrtszeit Donnerstag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
   twizy_2_abfahrtszeit_freitag:
     name: "Twizy 2 – Abfahrtszeit Freitag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
   twizy_2_abfahrtszeit_samstag:
     name: "Twizy 2 – Abfahrtszeit Samstag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
   twizy_2_abfahrtszeit_sonntag:
     name: "Twizy 2 – Abfahrtszeit Sonntag"
     icon: mdi:clock-time-seven
     has_date: false
     has_time: true
-    initial: "07:00:00"
 
   # Datum, auf das sich die "Einschaltzeit heute"-Zähler (input_number
   # weiter unten) beziehen (intern, für den Tageswechsel).
@@ -195,14 +184,12 @@ input_datetime:
     icon: mdi:calendar-clock
     has_date: true
     has_time: false
-    initial: "2000-01-01"
 
   twizy_2_einschaltzeit_tag:
     name: "Twizy 2 – Datum des Einschaltzeit-Zählers (intern)"
     icon: mdi:calendar-clock
     has_date: true
     has_time: false
-    initial: "2000-01-01"
 
 input_number:
   twizy_1_eigene_ladedauer_minuten:
@@ -211,7 +198,6 @@ input_number:
     min: 0
     max: 600
     step: 5
-    initial: 120
     unit_of_measurement: min
 
   twizy_2_eigene_ladedauer_minuten:
@@ -220,7 +206,6 @@ input_number:
     min: 0
     max: 600
     step: 5
-    initial: 120
     unit_of_measurement: min
 
   twizy_max_gesamtleistung_watt:
@@ -229,11 +214,12 @@ input_number:
     min: 500
     max: 5000
     step: 50
-    initial: 3000
     unit_of_measurement: W
     # Wird vom Lade-Scheduler nur beim EINSCHALTEN geprüft (Vermeidung
     # einer absehbaren Überlast), nicht aktiv überwacht - die Steckdosen
-    # haben eigenen Überlastschutz.
+    # haben eigenen Überlastschutz. Fällt dieser Helfer (z. B. ganz frisch
+    # angelegt) auf den Minimalwert zurück, greift im Blueprint zusätzlich
+    # ein eingebauter Fallback von 3000 W.
 
   twizy_1_mindestlaufzeit_minuten:
     name: "Twizy 1 – Mindest-Einschaltzeit der Steckdose pro Tag (auch wenn voll)"
@@ -241,7 +227,6 @@ input_number:
     min: 0
     max: 240
     step: 5
-    initial: 30
     unit_of_measurement: min
 
   twizy_2_mindestlaufzeit_minuten:
@@ -250,7 +235,6 @@ input_number:
     min: 0
     max: 240
     step: 5
-    initial: 30
     unit_of_measurement: min
 
   # Interne Zähler: bereits erreichte Einschaltzeit "heute" (siehe Datum
@@ -262,7 +246,6 @@ input_number:
     min: 0
     max: 1500
     step: 1
-    initial: 0
     unit_of_measurement: min
 
   twizy_2_einschaltzeit_minuten_heute:
@@ -271,20 +254,20 @@ input_number:
     min: 0
     max: 1500
     step: 1
-    initial: 0
     unit_of_measurement: min
 
   # Selbstlernender Korrekturfaktor für die OVMS-Restzeitschätzung: wird
   # nach jeder Ladung, die mindestens die Korrektur-SoC-Schwelle des
   # Lade-Scheduler-Blueprints erreicht hat, per gleitendem Mittelwert aus
-  # dem Verhältnis tatsächliche/geschätzte Ladedauer angepasst.
+  # dem Verhältnis tatsächliche/geschätzte Ladedauer angepasst. Fällt dieser
+  # Helfer auf den Minimalwert (0.3) zurück, greift im Blueprint zusätzlich
+  # ein eingebauter Fallback von 1.0 (= keine Korrektur).
   twizy_1_ladezeit_korrekturfaktor:
     name: "Twizy 1 – Ladezeit-Korrekturfaktor (selbstlernend)"
     icon: mdi:chart-line-variant
     min: 0.3
     max: 3.0
     step: 0.05
-    initial: 1.0
 
   twizy_2_ladezeit_korrekturfaktor:
     name: "Twizy 2 – Ladezeit-Korrekturfaktor (selbstlernend)"
@@ -292,7 +275,6 @@ input_number:
     min: 0.3
     max: 3.0
     step: 0.05
-    initial: 1.0
 
   # OVMS-Restzeitschätzung zum Zeitpunkt des letzten Ladestarts (intern,
   # Grundlage für den Korrekturfaktor oben - nicht zur manuellen Bedienung
@@ -303,7 +285,6 @@ input_number:
     min: 0
     max: 1500
     step: 1
-    initial: 0
     unit_of_measurement: min
 
   twizy_2_sitzung_start_etr_minuten:
@@ -312,7 +293,6 @@ input_number:
     min: 0
     max: 1500
     step: 1
-    initial: 0
     unit_of_measurement: min
 
 # ---------------------------------------------------------------------------
