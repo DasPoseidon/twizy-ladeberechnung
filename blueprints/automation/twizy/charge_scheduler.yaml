@@ -65,6 +65,13 @@ blueprint:
         dafür nicht aus, wird die Steckdose trotz vollem Akku zur
         günstigsten verbleibenden Stunde/den günstigsten verbleibenden
         Stunden nochmal für die fehlende Zeit eingeschaltet.
+    11. Während eine laufende Ladesitzung wegen SoC-Schwelle regulär enden
+        würde, wird das tatsächliche Abschalten zurückgehalten, bis der
+        gemessene Ladestrom zusätzlich für eine einstellbare Zeit (Default
+        1 Minute) unter einem einstellbaren Schwellwert (Default 10 W)
+        bleibt - verhindert ein zu frühes Abschalten während der
+        auslaufenden Erhaltungsladung, wenn der SoC-Wert schon "voll"
+        anzeigt, der Ladestrom aber noch nicht wirklich auf null ist.
 
     Der Korrekturfaktor für die OVMS-Restzeitschätzung wird nach jeder
     Ladung, bei der der Akku mindestens die Korrektur-SoC-Schwelle (Default
@@ -165,6 +172,32 @@ blueprint:
       selector:
         entity:
           domain: sensor
+
+    charge_complete_power_threshold:
+      name: Ladeschluss-Leistungsschwelle (W)
+      description: >
+        Ist der SoC-Schwellwert "voll" erreicht, wird die Steckdose nicht
+        sofort abgeschaltet, sondern erst, wenn der gemessene Ladestrom
+        zusätzlich für die untenstehende Dauer unter diesem Wert bleibt -
+        verhindert ein zu frühes Abschalten während der auslaufenden
+        Erhaltungsladung.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 200
+          step: 1
+          unit_of_measurement: W
+
+    charge_complete_power_duration:
+      name: Ladeschluss-Leistungsschwelle – Mindestdauer
+      description: >
+        So lange muss der Ladestrom durchgehend unter der obigen Schwelle
+        bleiben, bevor die Steckdose als "fertig geladen" abgeschaltet wird.
+      default:
+        minutes: 1
+      selector:
+        duration: {}
 
     correction_factor_soc_threshold:
       name: Korrektur-SoC-Schwelle (%)
@@ -269,6 +302,8 @@ variables:
   soc_sensor: !input soc_sensor
   soc_full_threshold: !input soc_full_threshold
   etr_full_sensor: !input etr_full_sensor
+  charge_complete_power_threshold: !input charge_complete_power_threshold
+  charge_complete_power_duration: !input charge_complete_power_duration
   correction_factor_soc_threshold: !input correction_factor_soc_threshold
   charge_state_sensor: !input charge_state_sensor
   charging_state_values: !input charging_state_values
@@ -301,6 +336,8 @@ variables:
   on_time_today_date_helper: "{{ 'input_datetime.' ~ vehicle_id ~ '_einschaltzeit_tag' }}"
   correction_factor_helper: "{{ 'input_number.' ~ vehicle_id ~ '_ladezeit_korrekturfaktor' }}"
   session_start_etr_helper: "{{ 'input_number.' ~ vehicle_id ~ '_sitzung_start_etr_minuten' }}"
+  charging_finished_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_ladevorgang_fertig' }}"
+  current_power_display_helper: "{{ 'input_number.' ~ vehicle_id ~ '_aktueller_ladestrom_watt' }}"
 
 trigger:
   - platform: time_pattern
@@ -341,6 +378,25 @@ trigger:
   #   Prüfzyklus zu warten.
   - platform: state
     entity_id:
+      - !input innen_power_sensor
+      - !input aussen_power_sensor
+    id: periodic
+  # ^ hält die Ladestrom-Anzeige im Dashboard aktuell (siehe
+  #   current_power_display_helper) und wertet die untenstehende
+  #   Ladeschluss-Erkennung zügig neu aus.
+  - platform: numeric_state
+    entity_id:
+      - !input innen_power_sensor
+      - !input aussen_power_sensor
+    below: !input charge_complete_power_threshold
+    for: !input charge_complete_power_duration
+    id: charging_finished
+  # ^ Ladeschluss-Erkennung: Ladestrom ist durchgehend unter der Schwelle
+  #   geblieben - siehe charging_finished_helper unten. Beide Steckdosen
+  #   gelistet (siehe Hinweis oben), im action-Teil wird geprüft, ob es
+  #   tatsächlich die eigene Steckdose war.
+  - platform: state
+    entity_id:
       - !input innen_switch
       - !input aussen_switch
     from: "unavailable"
@@ -372,6 +428,7 @@ action:
       current_switch: "{{ innen_switch if states(innen_socket_helper) == vehicle_id else (aussen_switch if states(aussen_socket_helper) == vehicle_id else none) }}"
       other_switch: "{{ aussen_switch if states(innen_socket_helper) == vehicle_id else (innen_switch if states(aussen_socket_helper) == vehicle_id else none) }}"
       other_power_sensor: "{{ aussen_power_sensor if states(innen_socket_helper) == vehicle_id else innen_power_sensor }}"
+      current_power_sensor: "{{ innen_power_sensor if states(innen_socket_helper) == vehicle_id else aussen_power_sensor }}"
 
   - if:
       - condition: template
@@ -442,7 +499,9 @@ action:
 
   # OVMS-Restzeitschätzung bei Ladestart merken (Basis für den
   # Ladezeit-Korrekturfaktor oben) - unabhängig davon, ob manuell oder
-  # automatisch eingeschaltet wurde.
+  # automatisch eingeschaltet wurde. Außerdem: neue Ladesitzung beginnt,
+  # also die Ladeschluss-Bestätigung der vorherigen Sitzung zurücksetzen
+  # (siehe charging_finished_helper unten).
   - if:
       - condition: trigger
         id: switch_on
@@ -454,6 +513,26 @@ action:
           entity_id: "{{ session_start_etr_helper }}"
         data:
           value: "{{ states(etr_full_sensor) | float(0) if states(etr_full_sensor) not in ['unknown', 'unavailable', 'none', ''] else 0 }}"
+      - service: input_boolean.turn_off
+        target:
+          entity_id: "{{ charging_finished_helper }}"
+
+  # Ladeschluss-Erkennung: Ladestrom der eigenen Steckdose ist durchgehend
+  # unter der Schwelle geblieben (siehe charging_finished-Trigger oben) -
+  # merken, damit unten das Abschalten trotz erreichter SoC-Schwelle nicht
+  # schon vorher passiert (siehe would_overload_if_started-Block /
+  # Ein-/Ausschalt-choose unten).
+  - if:
+      - condition: trigger
+        id: charging_finished
+      - condition: template
+        value_template: "{{ trigger.entity_id == current_power_sensor }}"
+      - condition: template
+        value_template: "{{ is_state(current_switch, 'on') }}"
+    then:
+      - service: input_boolean.turn_on
+        target:
+          entity_id: "{{ charging_finished_helper }}"
 
   # Tibber-Stundenpreise heute+morgen abrufen. Die Tibber-Integration ruft
   # die eigentliche Tibber-API dabei nur auf, wenn die angefragten Daten
@@ -637,6 +716,12 @@ action:
     data:
       value: "{{ (next_charge_start_text | string)[:255] }}"
 
+  - service: input_number.set_value
+    target:
+      entity_id: "{{ current_power_display_helper }}"
+    data:
+      value: "{{ states(current_power_sensor) | float(0) if states(current_power_sensor) not in ['unknown', 'unavailable', 'none', ''] else 0 }}"
+
   - choose:
       - conditions:
           - condition: template
@@ -654,7 +739,17 @@ action:
               entity_id: "{{ current_switch }}"
       - conditions:
           - condition: template
-            value_template: "{{ (not should_charge_now) and is_state(current_switch, 'on') }}"
+            value_template: >-
+              {{ (not should_charge_now) and is_state(current_switch, 'on') and
+                 (not is_full or is_state(charging_finished_helper, 'on')) }}
+        # Wird should_charge_now NUR wegen Erreichen der SoC-Schwelle
+        # "false" (is_full), bleibt die Steckdose zusätzlich so lange an,
+        # bis der Ladestrom die Ladeschluss-Bedingung bestätigt hat
+        # (charging_finished_helper, siehe oben) - verhindert ein
+        # verfrühtes Abschalten während der Erhaltungsladung. Wird
+        # should_charge_now aus einem anderen Grund false (z. B. Ende des
+        # geplanten Preisfensters, ohne dass das Fahrzeug schon voll ist),
+        # wird wie bisher sofort abgeschaltet.
         sequence:
           - service: switch.turn_off
             target:

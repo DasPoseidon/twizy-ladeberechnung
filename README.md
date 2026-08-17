@@ -320,13 +320,32 @@ Anpassung ein. Der aktuelle Faktor ist im Dashboard unter "Einstellungen"
 als Debug-Wert sichtbar.
 
 ### Laden abgeschlossen & Mindest-Einschaltzeit pro Tag
-Ist der SoC-Schwellwert erreicht, wird die Steckdose abgeschaltet – so weit
-die Grundregel. Zusätzlich gibt es eine einstellbare **Mindest-Einschaltzeit
-pro Tag** (`twizy_{1,2}_mindestlaufzeit_minuten`, Default 30 min, 0
-deaktiviert die Funktion): Damit die Steckdose auch an Tagen, an denen das
-Fahrzeug schon voll ist (z. B. weil es kaum gefahren wurde), nicht komplett
-stromlos bleibt, wird sie zur günstigsten verbleibenden Stunde trotzdem
-nochmal eingeschaltet, bis die Mindestzeit erreicht ist.
+Ist der SoC-Schwellwert erreicht, **beginnt** die Abschaltung – tatsächlich
+ausgeschaltet wird aber erst, wenn zusätzlich der gemessene Ladestrom der
+zugeordneten Steckdose durchgehend für eine einstellbare Zeit
+(`charge_complete_power_duration`, Default 1 Minute) unter einer
+einstellbaren Schwelle bleibt (`charge_complete_power_threshold`, Default
+10 W). Grund: Der SoC-Wert erreicht die "voll"-Schwelle oft schon, während
+die Erhaltungsladung noch mit kleinem Strom weiterläuft – ohne diese
+zusätzliche Bedingung würde dieser letzte Rest abgeschnitten. Die
+Bestätigung wird pro Ladesitzung intern gemerkt
+(`twizy_{1,2}_ladevorgang_fertig`) und bei jedem neuen Einschalten
+zurückgesetzt. Wird die Steckdose aus einem anderen Grund abgeschaltet
+(z. B. weil das geplante günstige Preisfenster endet, bevor das Fahrzeug
+voll ist), gilt diese zusätzliche Bedingung nicht – nur das
+"eigentlich fertig, SoC-Schwelle erreicht"-Abschalten wartet auf die
+Strom-Bestätigung.
+
+Der aktuelle Ladestrom der zugeordneten Steckdose wird dafür laufend in
+`twizy_{1,2}_aktueller_ladestrom_watt` gespiegelt und im Dashboard oben bei
+"Status" angezeigt.
+
+Zusätzlich gibt es eine einstellbare **Mindest-Einschaltzeit pro Tag**
+(`twizy_{1,2}_mindestlaufzeit_minuten`, Default 30 min, 0 deaktiviert die
+Funktion): Damit die Steckdose auch an Tagen, an denen das Fahrzeug schon
+voll ist (z. B. weil es kaum gefahren wurde), nicht komplett stromlos
+bleibt, wird sie zur günstigsten verbleibenden Stunde trotzdem nochmal
+eingeschaltet, bis die Mindestzeit erreicht ist.
 
 Dafür führt der Lade-Scheduler intern einen Tages-Zähler
 (`twizy_{1,2}_einschaltzeit_minuten_heute` + `twizy_{1,2}_einschaltzeit_tag`),

@@ -85,6 +85,18 @@ input_boolean:
     name: "Twizy 2 – selbst berechnete Ladedauer statt OVMS-Schätzung verwenden"
     icon: mdi:calculator
 
+  # Wird vom Lade-Scheduler gesetzt, sobald der Ladestrom der aktuellen
+  # Ladesitzung durchgehend unter die Ladeschluss-Schwelle gefallen ist -
+  # erst dann wird trotz erreichter SoC-Schwelle tatsächlich abgeschaltet
+  # (nicht zur manuellen Bedienung gedacht).
+  twizy_1_ladevorgang_fertig:
+    name: "Twizy 1 – Ladevorgang per Ladestrom bestätigt beendet (intern)"
+    icon: mdi:battery-charging-100
+
+  twizy_2_ladevorgang_fertig:
+    name: "Twizy 2 – Ladevorgang per Ladestrom bestätigt beendet (intern)"
+    icon: mdi:battery-charging-100
+
 # ---------------------------------------------------------------------------
 # Zeitpläne / Sollwerte
 #
@@ -294,6 +306,26 @@ input_number:
     max: 1500
     step: 1
     unit_of_measurement: min
+
+  # Aktueller Ladestrom der jeweils zugeordneten Steckdose (informativ,
+  # Dashboard) - wird vom Lade-Scheduler bei jeder Auswertung aus dem
+  # Leistungssensor der aktuell zugeordneten Steckdose übernommen. Dient
+  # auch als Grundlage der Ladeschluss-Erkennung (siehe Blueprint).
+  twizy_1_aktueller_ladestrom_watt:
+    name: "Twizy 1 – aktueller Ladestrom"
+    icon: mdi:flash
+    min: 0
+    max: 4000
+    step: 1
+    unit_of_measurement: W
+
+  twizy_2_aktueller_ladestrom_watt:
+    name: "Twizy 2 – aktueller Ladestrom"
+    icon: mdi:flash
+    min: 0
+    max: 4000
+    step: 1
+    unit_of_measurement: W
 
 # ---------------------------------------------------------------------------
 # Ladeplan (informativ/Debug) – der Lade-Scheduler ruft die Tibber-Preise
