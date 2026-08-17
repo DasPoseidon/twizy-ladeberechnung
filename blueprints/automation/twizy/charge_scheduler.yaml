@@ -736,8 +736,29 @@ action:
     target:
       entity_id: "{{ ladeplan_helper }}"
     data:
+      # Lesbare Zeiträume statt roher epoch_slot-Zahlen: aufeinanderfolgende
+      # Slots werden zu einem Zeitraum zusammengefasst
+      # (z. B. "Mo 17.08. 15:00–17:30, Di 18.08. 01:45–02:00, ...").
       value: >-
-        {{ ('h' ~ (plan_offsets | map('string') | join(';')))[:255] }}
+        {% set ns = namespace(groups=[], start=none, prev=none, parts=[]) %}
+        {% for slot in plan_offsets %}
+          {% if ns.start is none %}
+            {% set ns.start = slot %}
+          {% elif slot != ns.prev + 1 %}
+            {% set ns.groups = ns.groups + [(ns.start, ns.prev)] %}
+            {% set ns.start = slot %}
+          {% endif %}
+          {% set ns.prev = slot %}
+        {% endfor %}
+        {% if ns.start is not none %}
+          {% set ns.groups = ns.groups + [(ns.start, ns.prev)] %}
+        {% endif %}
+        {% for g in ns.groups %}
+          {% set start_dt = as_local(as_datetime(g[0] * price_resolution_seconds)) %}
+          {% set end_dt = as_local(as_datetime((g[1] + 1) * price_resolution_seconds)) %}
+          {% set ns.parts = ns.parts + [start_dt.strftime('%a %d.%m. %H:%M') ~ '–' ~ end_dt.strftime('%H:%M')] %}
+        {% endfor %}
+        {{ (ns.parts | join(', '))[:255] if ns.parts else 'Kein Ladebedarf geplant' }}
 
   - service: input_text.set_value
     target:
