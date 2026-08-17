@@ -50,6 +50,16 @@ input_select:
 # Status-Flags
 # ---------------------------------------------------------------------------
 input_boolean:
+  # Steckdosen-Pause (z. B. für Rasenmäher): ist dieser Schalter "an",
+  # lässt der Lade-Scheduler die Steckdose "außen" komplett unangetastet
+  # (kein automatisches Ein-/Ausschalten), egal welches Fahrzeug gerade
+  # zugeordnet ist. Schaltet sich automatisch wieder aus, sobald der
+  # Stromverbrauch der Steckdose für eine Weile durchgehend niedrig war
+  # (siehe Blueprint "Twizy: Steckdose pausieren").
+  twizy_socket_aussen_pause:
+    name: "Steckdose Außen – pausiert (z. B. Rasenmäher)"
+    icon: mdi:pause-circle-outline
+
   # Pro Fahrzeug ein eigener Helfer (nicht geteilt!) - sonst würde eine
   # erfolgreiche Verifikation von Fahrzeug 1 fälschlich auch für Fahrzeug 2
   # als "verifiziert" gelten.

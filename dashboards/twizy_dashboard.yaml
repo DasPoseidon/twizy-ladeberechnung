@@ -64,6 +64,8 @@ views:
                 name: Steckdose "außen" belegt durch
               - entity: input_number.twizy_max_gesamtleistung_watt
                 name: Max. Gesamtleistung Stromkreis
+              - entity: input_boolean.twizy_socket_aussen_pause
+                name: Steckdose "außen" pausiert (z. B. Rasenmäher)
           - type: entities
             title: Ladestrom
             entities:

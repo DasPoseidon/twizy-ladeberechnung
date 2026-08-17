@@ -154,6 +154,18 @@ blueprint:
         entity:
           domain: input_select
 
+    aussen_pause_helper:
+      name: Helper – Steckdose "außen" pausiert
+      description: >
+        Ist dieser Schalter "an" (siehe Blueprint "Twizy: Steckdose
+        pausieren"), lässt dieser Lade-Scheduler die Steckdose "außen"
+        komplett unangetastet, falls er ihr gerade zugeordnet ist - z. B.
+        während sie für ein anderes Gerät wie einen Rasenmäher genutzt wird.
+      default: input_boolean.twizy_socket_aussen_pause
+      selector:
+        entity:
+          domain: input_boolean
+
     soc_sensor:
       name: Akkustand-Sensor (SoC, %) dieses Fahrzeugs
       selector:
@@ -301,6 +313,7 @@ variables:
   typical_power_watt: !input typical_power_watt
   innen_socket_helper: !input innen_socket_helper
   aussen_socket_helper: !input aussen_socket_helper
+  aussen_pause_helper: !input aussen_pause_helper
   soc_sensor: !input soc_sensor
   soc_full_threshold: !input soc_full_threshold
   etr_full_sensor: !input etr_full_sensor
@@ -373,6 +386,12 @@ trigger:
   # ^ für zügige Verifikation nach dem Einschalten, statt bis zum nächsten
   #   Prüfzyklus zu warten.
   - platform: state
+    entity_id: !input aussen_pause_helper
+    id: periodic
+  # ^ sofort reagieren, wenn die Steckdose "außen" pausiert bzw. die Pause
+  #   beendet wird (siehe stop-Guard unten), statt bis zum nächsten
+  #   Prüfzyklus zu warten.
+  - platform: state
     entity_id:
       - !input innen_power_sensor
       - !input aussen_power_sensor
@@ -430,6 +449,12 @@ action:
         value_template: "{{ current_switch is none }}"
     then:
       - stop: "Fahrzeug {{ vehicle_id }} aktuell keiner Steckdose zugeordnet"
+
+  - if:
+      - condition: template
+        value_template: "{{ current_switch == aussen_switch and is_state(aussen_pause_helper, 'on') }}"
+    then:
+      - stop: "Steckdose außen pausiert (z. B. Rasenmäher) - {{ vehicle_id }} greift nicht ein"
 
   # --- manuelles Ein-/Ausschalten erkennen (Heuristik: kein automation-Kontext) ---
   - choose:

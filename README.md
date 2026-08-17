@@ -18,6 +18,7 @@ Stromkreis, mit OVMS-Standorterkennung und Tibber-Dynamiktarif.
   - [Ladeschluss-Erkennung](#ladeschluss-erkennung)
   - [Mindest-Einschaltzeit pro Tag](#mindest-einschaltzeit-pro-tag)
   - [Manuelles Einschalten](#manuelles-einschalten)
+  - [Steckdose pausieren](#steckdose-pausieren-z-b-f%C3%BCr-rasenm%C3%A4her)
   - [Gemeinsames 3-kW-Limit](#gemeinsames-3-kw-limit)
 - [Bekannte Vereinfachungen](#bekannte-vereinfachungen)
 - [Repository-Struktur](#repository-struktur)
@@ -33,7 +34,7 @@ wäre unlesbar und schwer zu warten. Deshalb die Trennung:
 
 1. Ein **Helper-Paket** (`packages/twizy_charging.yaml`) legt alle
    `input_*`-Entities an, die den Zustand halten.
-2. Zwei fokussierte, wiederverwendbare **Blueprints**
+2. Fokussierte, wiederverwendbare **Blueprints**
    (`blueprints/automation/twizy/`), die über diese Helper miteinander
    "kommunizieren":
    - **Steckdosen-Zuordnung** – 1× angelegt, pflegt innen/außen.
@@ -41,6 +42,9 @@ wäre unlesbar und schwer zu warten. Deshalb die Trennung:
      Tibber-Preise per Service ab (kein eigener Cache) und berücksichtigt
      das gemeinsame Stromkreis-Limit nur bei der Planung, nicht per aktiver
      Überwachung (siehe [Gemeinsames 3-kW-Limit](#gemeinsames-3-kw-limit)).
+   - **Steckdose pausieren** – optional 1× angelegt, nimmt eine Steckdose
+     vorübergehend aus der Ladesteuerung heraus (siehe
+     [Steckdose pausieren](#steckdose-pausieren-z-b-f%C3%BCr-rasenm%C3%A4her)).
 
 Das ist die in der Home-Assistant-Community übliche Architektur für
 Automatisierungen, die mehr als "wenn X dann Y" brauchen: Helper für
@@ -114,13 +118,14 @@ anderen Steckdose.
      als Blueprint-Quelle importieren).
 2. Home Assistant neu laden (YAML-Konfiguration neu laden reicht,
    Neustart nicht zwingend nötig).
-3. Unter **Einstellungen → Automatisierungen → Blueprints** die beiden
-   Blueprints als Automatisierungen anlegen:
+3. Unter **Einstellungen → Automatisierungen → Blueprints** die Blueprints
+   als Automatisierungen anlegen:
 
    | Blueprint | Wie oft anlegen | Wichtige Eingaben |
    |---|---|---|
    | Steckdosen-Zuordnung | 1× | Standort- & Moving-Sensoren beider Fahrzeuge |
    | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren + Standort-Entität **des jeweiligen Fahrzeugs**, beide Schalter + beide Leistungssensoren |
+   | Steckdose pausieren | 1× (optional, für "außen") | Leistungssensor der Steckdose "außen" – siehe [Steckdose pausieren](#steckdose-pausieren-z-b-f%C3%BCr-rasenm%C3%A4her) |
 
    Alle Helper-Entities (Abfahrtszeiten, Ladedauer, Korrekturfaktor,
    Zuordnungs-/Verifikations-Flags usw.) werden automatisch aus
@@ -382,6 +387,27 @@ aber als spätester "voll"-Zeitpunkt gültig – die Automatisierung schaltet
 weiterhin ab, sobald der SoC-Schwellwert erreicht ist (siehe
 [Ladeschluss-Erkennung](#ladeschluss-erkennung)).
 
+### Steckdose pausieren (z. B. für Rasenmäher)
+Über `input_boolean.twizy_socket_aussen_pause` lässt sich die Steckdose
+"außen" komplett aus der Ladesteuerung herausnehmen, um sie z. B. für ein
+anderes Gerät (Rasenmäher, Bohrmaschine, ...) zu nutzen. Ist der Schalter
+"an", überspringt der zuständige Lade-Scheduler diese Steckdose vollständig
+– kein automatisches Ein-/Ausschalten, keine Verifikation, egal welches
+Fahrzeug ihr laut Zuordnung gerade zugewiesen ist. Ein-/Ausschalten während
+der Pause bleibt vollständig manuell; die Überlast-Vermeidung der jeweils
+anderen Steckdose bleibt trotzdem korrekt, da sie weiterhin den echten
+Leistungssensor ausliest, unabhängig davon, was tatsächlich angeschlossen
+ist.
+
+Die Pause endet automatisch von selbst: Der Blueprint "Twizy: Steckdose
+pausieren" (eigene, separate Automatisierung, 1× für die Steckdose "außen"
+anzulegen) beobachtet den Leistungssensor der Steckdose und schaltet den
+Pause-Schalter wieder aus, sobald der Stromverbrauch für eine einstellbare
+Dauer (Default 30 Minuten) durchgehend unter einer einstellbaren Schwelle
+(Default 10 W) bleibt – die Steckdose geht dann von selbst wieder in den
+Normalbetrieb über, ohne dass man daran denken muss, die Pause manuell zu
+beenden.
+
 ### Gemeinsames 3-kW-Limit
 Es gibt **keine aktive Überwachung/Abschaltung** durch die Automatisierung –
 die Steckdosen haben eigenen Überlastschutz und werden bei Überlast von
@@ -438,6 +464,7 @@ blueprints/automation/twizy/
   socket_assignment.yaml         # innen/außen-Zuordnung
   charge_scheduler.yaml          # Lade-Entscheidung je Fahrzeug (2x instanziieren),
                                   # inkl. Überlast-Vermeidung und Ladeschluss-Erkennung
+  socket_pause.yaml              # Steckdose "außen" pausieren (optional, 1x)
 dashboards/
   twizy_dashboard.yaml           # fertiges Dashboard (nur eingebaute Karten)
 ```

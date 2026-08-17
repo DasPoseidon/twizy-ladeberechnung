@@ -1,0 +1,78 @@
+blueprint:
+  name: "Twizy: Steckdose pausieren (z. B. für Rasenmäher)"
+  description: >
+    Nimmt eine Steckdose vorübergehend komplett aus der Twizy-Ladesteuerung
+    heraus, damit man sie z. B. für ein anderes Gerät (Rasenmäher,
+    Bohrmaschine, ...) nutzen kann, ohne dass sich der Lade-Scheduler
+    einmischt.
+
+    Ist der Pause-Schalter "an", überspringt der zuständige Lade-Scheduler
+    diese Steckdose komplett - kein automatisches Ein-/Ausschalten, keine
+    Verifikation, egal welches Fahrzeug gerade zugeordnet ist. Ein-/
+    Ausschalten während der Pause bleibt vollständig manuell.
+
+    Der Pause-Schalter schaltet sich automatisch wieder aus, sobald der
+    gemessene Stromverbrauch der Steckdose für eine einstellbare Dauer
+    (Default 30 Minuten) durchgehend unter einer einstellbaren Schwelle
+    (Default 10 W) bleibt - die Steckdose geht dann von selbst wieder in
+    den normalen, automatischen Betrieb über.
+  domain: automation
+  source_url: https://github.com/DasPoseidon/twizy-ladeberechnung/blob/main/blueprints/automation/twizy/socket_pause.yaml
+  input:
+    power_sensor:
+      name: Leistungssensor der Steckdose (W)
+      selector:
+        entity:
+          domain: sensor
+
+    pause_helper:
+      name: Helper – Pause-Schalter
+      default: input_boolean.twizy_socket_aussen_pause
+      selector:
+        entity:
+          domain: input_boolean
+
+    resume_power_threshold:
+      name: Rückkehr-Schwelle (W)
+      description: >
+        Sobald der Stromverbrauch der Steckdose durchgehend unter diesem
+        Wert bleibt (siehe Mindestdauer unten), wird die Pause automatisch
+        wieder beendet.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 200
+          step: 1
+          unit_of_measurement: W
+
+    resume_after:
+      name: Rückkehr-Schwelle – Mindestdauer
+      description: >
+        So lange muss der Stromverbrauch durchgehend unter der obigen
+        Schwelle bleiben, bevor die Pause automatisch beendet wird.
+      default:
+        minutes: 30
+      selector:
+        duration: {}
+
+variables:
+  pause_helper: !input pause_helper
+
+trigger:
+  - platform: numeric_state
+    entity_id: !input power_sensor
+    below: !input resume_power_threshold
+    for: !input resume_after
+
+condition:
+  - condition: state
+    entity_id: !input pause_helper
+    state: "on"
+
+action:
+  - service: input_boolean.turn_off
+    target:
+      entity_id: "{{ pause_helper }}"
+
+mode: single
