@@ -186,8 +186,21 @@ Aktualisieren auf diese Version:
 
 ### Tibber-Preise
 Der Lade-Scheduler ruft bei jedem Prüfzyklus den Service `tibber.get_prices`
-auf (Zeitraum heute 00:00 bis übermorgen 00:00) und baut daraus die Liste
-der Stundenpreise – kein eigener Cache, kein Zwischenspeicher-Helper.
+auf (Zeitraum heute 00:00 bis übermorgen 00:00) und baut daraus die
+Preisliste – kein eigener Cache, kein Zwischenspeicher-Helper.
+
+**Preis-Zeitraster (Stunden- oder Viertelstundenpreise):** Manche
+Tibber-Verträge rechnen inzwischen viertelstündlich statt stündlich ab. Der
+Lade-Scheduler geht das nicht fest von einer der beiden Auflösungen aus,
+sondern ermittelt bei jedem Prüfzyklus aus dem tatsächlichen Abstand
+zwischen den von `tibber.get_prices` gelieferten Preiseinträgen, welches
+Zeitraster gerade gilt (`price_resolution_seconds`: 3600 bei
+Stundenpreisen, 900 bei Viertelstundenpreisen) – keine Einstellung nötig,
+funktioniert für beide Vertragsarten und passt sich automatisch an, falls
+sich das Zeitraster später nochmal ändert. Die Anzahl benötigter
+Zeitfenster (`needed_slots`), die Fenstergrenzen und die Anzeige "nächster
+Ladestart" rechnen entsprechend mit diesem erkannten Zeitraster statt fest
+mit Stunden.
 
 **Wichtig, falls du das nachvollziehen willst:** Ältere Community-Blueprints
 und -Anleitungen gehen oft davon aus, dass der Tibber-Preis-Sensor
