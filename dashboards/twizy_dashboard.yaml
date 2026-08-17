@@ -69,10 +69,12 @@ views:
           - type: entities
             title: Ladestrom
             entities:
+              - entity: switch.twizygarage_twizystecker_innen
               - entity: sensor.twizygarage_twizystecker_innen_leistung
-                name: "Innen"
+                name: Innen
+              - entity: switch.twizygarage_twizystecker_aussen
               - entity: sensor.twizygarage_twizystecker_aussen_leistung
-                name: "Außen"
+                name: Außen
       - type: grid
         cards:
           - type: entities
