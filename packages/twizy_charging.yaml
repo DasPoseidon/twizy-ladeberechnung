@@ -77,14 +77,6 @@ input_boolean:
     name: "Twizy 2 – manuell gestartetes Laden aktiv"
     icon: mdi:hand-back-right
 
-  twizy_1_eigene_ladedauer_verwenden:
-    name: "Twizy 1 – selbst berechnete Ladedauer statt OVMS-Schätzung verwenden"
-    icon: mdi:calculator
-
-  twizy_2_eigene_ladedauer_verwenden:
-    name: "Twizy 2 – selbst berechnete Ladedauer statt OVMS-Schätzung verwenden"
-    icon: mdi:calculator
-
   # Wird vom Lade-Scheduler gesetzt, sobald der Ladestrom der aktuellen
   # Ladesitzung durchgehend unter die Ladeschluss-Schwelle gefallen ist -
   # erst dann wird trotz erreichter SoC-Schwelle tatsächlich abgeschaltet
@@ -204,24 +196,6 @@ input_datetime:
     has_time: false
 
 input_number:
-  twizy_1_eigene_ladedauer_minuten:
-    name: "Twizy 1 – selbst berechnete Ladedauer"
-    icon: mdi:timer-outline
-    min: 0
-    max: 600
-    step: 5
-    unit_of_measurement: min
-    mode: box
-
-  twizy_2_eigene_ladedauer_minuten:
-    name: "Twizy 2 – selbst berechnete Ladedauer"
-    icon: mdi:timer-outline
-    min: 0
-    max: 600
-    step: 5
-    unit_of_measurement: min
-    mode: box
-
   twizy_max_gesamtleistung_watt:
     name: "Twizy gemeinsamer Stromkreis – maximale Gesamtleistung"
     icon: mdi:flash-alert

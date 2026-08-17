@@ -8,11 +8,10 @@ blueprint:
     Ablauf pro Prüfzyklus:
     1. Ermittelt anhand der Steckdosen-Zuordnungs-Helper, ob dieses Fahrzeug
        aktuell an "innen" oder "außen" hängt.
-    2. Ermittelt die benötigte Ladedauer – standardmäßig die vom OVMS
-       geschätzte Restzeit bis voll, multipliziert mit einem selbstlernenden
+    2. Ermittelt die benötigte Ladedauer aus der vom OVMS geschätzten
+       Restzeit bis voll, multipliziert mit einem selbstlernenden
        Korrekturfaktor (aus dem Verhältnis tatsächlicher zu geschätzter
-       Ladedauer vergangener Ladungen), alternativ (Schalter-Helper) ein
-       selbst gepflegter Minutenwert.
+       Ladedauer vergangener Ladungen).
     3. Bestimmt die nächste Abfahrtszeit (Deadline) aus dem
        Abfahrtszeit-Helper des aktuellen bzw. (falls die heutige Zeit schon
        verstrichen ist) eines der nächsten Tage – für jeden Wochentag ist
@@ -327,8 +326,6 @@ variables:
         'input_datetime.' ~ vehicle_id ~ '_abfahrtszeit_freitag',
         'input_datetime.' ~ vehicle_id ~ '_abfahrtszeit_samstag',
         'input_datetime.' ~ vehicle_id ~ '_abfahrtszeit_sonntag'] }}
-  use_custom_duration_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_eigene_ladedauer_verwenden' }}"
-  custom_duration_helper: "{{ 'input_number.' ~ vehicle_id ~ '_eigene_ladedauer_minuten' }}"
   manual_flag_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_manuelles_laden' }}"
   ladeplan_helper: "{{ 'input_text.' ~ vehicle_id ~ '_ladeplan_offsets' }}"
   next_start_helper: "{{ 'input_text.' ~ vehicle_id ~ '_naechster_ladestart' }}"
@@ -369,10 +366,6 @@ trigger:
       - input_datetime.twizy_2_abfahrtszeit_freitag
       - input_datetime.twizy_2_abfahrtszeit_samstag
       - input_datetime.twizy_2_abfahrtszeit_sonntag
-      - input_boolean.twizy_1_eigene_ladedauer_verwenden
-      - input_boolean.twizy_2_eigene_ladedauer_verwenden
-      - input_number.twizy_1_eigene_ladedauer_minuten
-      - input_number.twizy_2_eigene_ladedauer_minuten
     id: periodic
   - platform: state
     entity_id: !input charge_state_sensor
@@ -556,7 +549,7 @@ action:
 
   - variables:
       ovms_etr_val: "{{ states(etr_full_sensor) }}"
-      duration_minutes: "{{ (states(custom_duration_helper) | float(120)) if (is_state(use_custom_duration_helper, 'on') or ovms_etr_val in ['unknown', 'unavailable', 'none', '']) else ((ovms_etr_val | float(120)) * (states(correction_factor_helper) | float(1.0))) }}"
+      duration_minutes: "{{ 120 if ovms_etr_val in ['unknown', 'unavailable', 'none', ''] else ((ovms_etr_val | float(120)) * (states(correction_factor_helper) | float(1.0))) }}"
       # Abfahrtszeit ist pro Wochentag einstellbar. Konvention: 00:00 Uhr an
       # einem Tag bedeutet "an diesem Tag kein Ladebedarf" (kein Auto-Fahren
       # geplant) - ohne dafür einen eigenen "aktiv"-Helper zu brauchen. Es

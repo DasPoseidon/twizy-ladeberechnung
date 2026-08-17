@@ -260,11 +260,8 @@ Fahrzeug wird pro Prüfzyklus (Default alle 10 min) berechnet:
 - die Deadline: die Abfahrtszeit des heutigen Wochentags – ist die schon
   verstrichen (oder liegt kein Ladebedarf vor, s. u.), wird bis zu eine
   Woche vorausgeschaut.
-- benötigte Ladedauer: standardmäßig die von OVMS geschätzte Restzeit bis
-  voll (mit [Korrekturfaktor](#selbstlernender-korrekturfaktor-f%C3%BCr-die-ovms-restzeitsch%C3%A4tzung));
-  per Schalter-Helper (`twizy_{1,2}_eigene_ladedauer_verwenden`) auf einen
-  selbst gepflegten Minutenwert (`twizy_{1,2}_eigene_ladedauer_minuten`)
-  umschaltbar.
+- benötigte Ladedauer: die von OVMS geschätzte Restzeit bis voll, mit
+  [Korrekturfaktor](#selbstlernender-korrekturfaktor-f%C3%BCr-die-ovms-restzeitsch%C3%A4tzung).
 - ob das aktuelle Zeitfenster zu den günstigsten Zeitfenstern vor der
   Deadline gehört, die in Summe die Ladedauer abdecken.
 - eine **Aufhol-Logik**: reicht die verbleibende Zeit bis zur Abfahrt nicht
@@ -311,8 +308,7 @@ Die von OVMS geschätzte Restzeit bis voll ist die Grundlage der Ladeplanung
 (siehe oben), aber je nach Fahrzeug/Firmware oft ungenau. Der Lade-Scheduler
 gleicht das mit einem Korrekturfaktor aus
 (`twizy_{1,2}_ladezeit_korrekturfaktor`, Start 1,0): Die tatsächlich
-verwendete Ladedauer ist immer `OVMS-Schätzung × Korrekturfaktor` (nur wenn
-nicht auf die eigene Ladedauer umgeschaltet ist).
+verwendete Ladedauer ist immer `OVMS-Schätzung × Korrekturfaktor`.
 
 Der Faktor lernt aus vergangenen Ladungen: Beim Einschalten wird die
 aktuelle OVMS-Schätzung gemerkt (`twizy_{1,2}_sitzung_start_etr_minuten`,
@@ -426,11 +422,6 @@ wieder eingeschaltet werden soll.
   nach der Toleranzzeit wieder ab, wenn OVMS kein "lädt aktiv" meldet,
   selbst wenn das gewünscht gewesen wäre. Bei Bedarf `verification_grace_period`
   großzügiger einstellen oder die Bedingung im Blueprint anpassen.
-- Die eigene Ladedauer-Berechnung (Alternative zur OVMS-Schätzung) ist als
-  Schalter + Helper vorbereitet, die eigentliche Berechnung müsste noch mit
-  fahrzeugspezifischen Werten (Akkukapazität, Ladeleistung, Temperatur-
-  Einfluss o. Ä.) befüllt werden – aktuell trägt man dort einen Minutenwert
-  von Hand ein.
 - Die Verbindungsprüfung nach Ankunft kann ohne echten Kabel-Sensor nicht
   zwischen "nicht angeschlossen" und "falsche Zuordnung" unterscheiden –
   die Benachrichtigung nennt beide als mögliche Ursache. Innerhalb des

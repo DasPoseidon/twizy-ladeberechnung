@@ -38,10 +38,6 @@ views:
           - type: entities
             title: Twizy 1 – Einstellungen
             entities:
-              - entity: input_boolean.twizy_1_eigene_ladedauer_verwenden
-                name: Eigene Ladedauer statt OVMS-Schätzung
-              - entity: input_number.twizy_1_eigene_ladedauer_minuten
-                name: Eigene Ladedauer (Minuten)
               - entity: input_number.twizy_1_mindestlaufzeit_minuten
                 name: Mindest-Einschaltzeit pro Tag
               - entity: input_boolean.twizy_1_verbindungspruefung_aktiv
@@ -108,10 +104,6 @@ views:
           - type: entities
             title: Twizy 2 – Einstellungen
             entities:
-              - entity: input_boolean.twizy_2_eigene_ladedauer_verwenden
-                name: Eigene Ladedauer statt OVMS-Schätzung
-              - entity: input_number.twizy_2_eigene_ladedauer_minuten
-                name: Eigene Ladedauer (Minuten)
               - entity: input_number.twizy_2_mindestlaufzeit_minuten
                 name: Mindest-Einschaltzeit pro Tag
               - entity: input_boolean.twizy_2_verbindungspruefung_aktiv
