@@ -14,6 +14,8 @@ views:
             entities:
               - entity: input_text.twizy_1_naechster_ladestart
                 name: Nächster Ladestart
+              - entity: input_number.twizy_1_erwartete_ladedauer_minuten
+                name: Erwartete Ladedauer
               - entity: sensor.meintwizy_battery_level
                 name: SoC
           - type: entities
@@ -82,6 +84,8 @@ views:
             entities:
               - entity: input_text.twizy_2_naechster_ladestart
                 name: Nächster Ladestart
+              - entity: input_number.twizy_2_erwartete_ladedauer_minuten
+                name: Erwartete Ladedauer
               - entity: sensor.meintwizy2_battery_level
                 name: SoC
           - type: entities

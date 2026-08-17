@@ -285,7 +285,7 @@ input_number:
     name: "Twizy 1 – Ladezeit-Korrekturfaktor (selbstlernend)"
     icon: mdi:chart-line-variant
     min: 0.3
-    max: 3.0
+    max: 6.0
     step: 0.05
     mode: box
 
@@ -293,7 +293,7 @@ input_number:
     name: "Twizy 2 – Ladezeit-Korrekturfaktor (selbstlernend)"
     icon: mdi:chart-line-variant
     min: 0.3
-    max: 3.0
+    max: 6.0
     step: 0.05
     mode: box
 
@@ -312,6 +312,27 @@ input_number:
   twizy_2_sitzung_start_etr_minuten:
     name: "Twizy 2 – OVMS-Restzeitschätzung bei Ladestart (intern)"
     icon: mdi:timer-marker-outline
+    min: 0
+    max: 1500
+    step: 1
+    unit_of_measurement: min
+    mode: box
+
+  # Aktuell erwartete Gesamt-Ladedauer (informativ, Status-Anzeige):
+  # OVMS-Restzeitschätzung × Korrekturfaktor, bzw. die eigene Ladedauer,
+  # falls darauf umgeschaltet ist. Wird bei jeder Auswertung neu berechnet.
+  twizy_1_erwartete_ladedauer_minuten:
+    name: "Twizy 1 – erwartete Ladedauer"
+    icon: mdi:timer-sync-outline
+    min: 0
+    max: 1500
+    step: 1
+    unit_of_measurement: min
+    mode: box
+
+  twizy_2_erwartete_ladedauer_minuten:
+    name: "Twizy 2 – erwartete Ladedauer"
+    icon: mdi:timer-sync-outline
     min: 0
     max: 1500
     step: 1

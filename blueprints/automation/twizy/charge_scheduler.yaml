@@ -340,6 +340,7 @@ variables:
   correction_factor_helper: "{{ 'input_number.' ~ vehicle_id ~ '_ladezeit_korrekturfaktor' }}"
   session_start_etr_helper: "{{ 'input_number.' ~ vehicle_id ~ '_sitzung_start_etr_minuten' }}"
   charging_finished_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_ladevorgang_fertig' }}"
+  expected_duration_helper: "{{ 'input_number.' ~ vehicle_id ~ '_erwartete_ladedauer_minuten' }}"
 
 trigger:
   - platform: time_pattern
@@ -485,7 +486,7 @@ action:
               final_soc: "{{ states(soc_sensor) | float(0) }}"
               predicted_etr_minutes: "{{ states(session_start_etr_helper) | float(0) }}"
               correction_ratio: >-
-                {{ [[session_minutes / predicted_etr_minutes, 0.3] | max, 3.0] | min if predicted_etr_minutes > 0 else none }}
+                {{ [[session_minutes / predicted_etr_minutes, 0.3] | max, 6.0] | min if predicted_etr_minutes > 0 else none }}
           - if:
               - condition: template
                 value_template: "{{ final_soc >= correction_factor_soc_threshold and correction_ratio is not none }}"
@@ -765,6 +766,12 @@ action:
       entity_id: "{{ next_start_helper }}"
     data:
       value: "{{ (next_charge_start_text | string)[:255] }}"
+
+  - service: input_number.set_value
+    target:
+      entity_id: "{{ expected_duration_helper }}"
+    data:
+      value: "{{ duration_minutes | round(0) | int }}"
 
   - choose:
       - conditions:

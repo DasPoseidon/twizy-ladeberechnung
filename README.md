@@ -319,14 +319,16 @@ aktuelle OVMS-Schätzung gemerkt (`twizy_{1,2}_sitzung_start_etr_minuten`,
 intern); erreicht der SoC beim Ausschalten mindestens die
 Korrektur-SoC-Schwelle (Blueprint-Eingabe `correction_factor_soc_threshold`,
 Default 95 %), wird das Verhältnis tatsächliche/geschätzte Dauer dieser
-Sitzung berechnet (auf 0,3–3,0 begrenzt, um Ausreißer abzufedern) und der
+Sitzung berechnet (auf 0,3–6,0 begrenzt, um Ausreißer abzufedern) und der
 Korrekturfaktor per gleitendem Mittelwert angepasst (70 % alter Wert, 30 %
 neues Verhältnis). Die 95 %-Schwelle liegt bewusst unter der "voll"-Schwelle
 (Default 97 %), weil die letzten Prozent oft per Erhaltungsladung sehr
 langsam laufen und die Messung sonst verzerren würden. Sitzungen, die diese
 Schwelle nicht erreichen (z. B. vorzeitig abgebrochen), fließen nicht in die
 Anpassung ein. Der aktuelle Faktor ist im Dashboard unter "Einstellungen"
-als Debug-Wert sichtbar.
+als Debug-Wert sichtbar, die daraus berechnete erwartete Gesamt-Ladedauer
+(`twizy_{1,2}_erwartete_ladedauer_minuten`) steht direkt in der jeweiligen
+"Status"-Karte.
 
 ### Ladeschluss-Erkennung
 Ist der SoC-Schwellwert erreicht, **beginnt** die Abschaltung – tatsächlich
