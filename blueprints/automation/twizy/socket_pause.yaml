@@ -6,10 +6,12 @@ blueprint:
     Bohrmaschine, ...) nutzen kann, ohne dass sich der Lade-Scheduler
     einmischt.
 
-    Ist der Pause-Schalter "an", überspringt der zuständige Lade-Scheduler
-    diese Steckdose komplett - kein automatisches Ein-/Ausschalten, keine
-    Verifikation, egal welches Fahrzeug gerade zugeordnet ist. Ein-/
-    Ausschalten während der Pause bleibt vollständig manuell.
+    Wird der Pause-Schalter eingeschaltet, schaltet diese Automatisierung
+    die Steckdose sofort mit ein. Solange die Pause aktiv ist, überspringt
+    der zuständige Lade-Scheduler diese Steckdose komplett - kein
+    automatisches Ein-/Ausschalten, keine Verifikation, egal welches
+    Fahrzeug gerade zugeordnet ist. Ein-/Ausschalten während der Pause
+    bleibt danach vollständig manuell.
 
     Der Pause-Schalter schaltet sich automatisch wieder aus, sobald der
     gemessene Stromverbrauch der Steckdose für eine einstellbare Dauer
@@ -19,6 +21,12 @@ blueprint:
   domain: automation
   source_url: https://github.com/DasPoseidon/twizy-ladeberechnung/blob/main/blueprints/automation/twizy/socket_pause.yaml
   input:
+    switch:
+      name: Schalter der Steckdose
+      selector:
+        entity:
+          domain: switch
+
     power_sensor:
       name: Leistungssensor der Steckdose (W)
       selector:
@@ -56,23 +64,35 @@ blueprint:
       selector:
         duration: {}
 
-variables:
-  pause_helper: !input pause_helper
-
 trigger:
+  - platform: state
+    entity_id: !input pause_helper
+    to: "on"
+    id: pause_started
   - platform: numeric_state
     entity_id: !input power_sensor
     below: !input resume_power_threshold
     for: !input resume_after
-
-condition:
-  - condition: state
-    entity_id: !input pause_helper
-    state: "on"
+    id: resume_timeout
 
 action:
-  - service: input_boolean.turn_off
-    target:
-      entity_id: "{{ pause_helper }}"
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: pause_started
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: !input switch
+      - conditions:
+          - condition: trigger
+            id: resume_timeout
+          - condition: state
+            entity_id: !input pause_helper
+            state: "on"
+        sequence:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: !input pause_helper
 
 mode: single

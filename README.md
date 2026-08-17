@@ -125,7 +125,7 @@ anderen Steckdose.
    |---|---|---|
    | Steckdosen-Zuordnung | 1× | Standort- & Moving-Sensoren beider Fahrzeuge |
    | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren + Standort-Entität **des jeweiligen Fahrzeugs**, beide Schalter + beide Leistungssensoren |
-   | Steckdose pausieren | 1× (optional, für "außen") | Leistungssensor der Steckdose "außen" – siehe [Steckdose pausieren](#steckdose-pausieren-z-b-f%C3%BCr-rasenm%C3%A4her) |
+   | Steckdose pausieren | 1× (optional, für "außen") | Schalter + Leistungssensor der Steckdose "außen" – siehe [Steckdose pausieren](#steckdose-pausieren-z-b-f%C3%BCr-rasenm%C3%A4her) |
 
    Alle Helper-Entities (Abfahrtszeiten, Ladedauer, Korrekturfaktor,
    Zuordnungs-/Verifikations-Flags usw.) werden automatisch aus
@@ -390,14 +390,15 @@ weiterhin ab, sobald der SoC-Schwellwert erreicht ist (siehe
 ### Steckdose pausieren (z. B. für Rasenmäher)
 Über `input_boolean.twizy_socket_aussen_pause` lässt sich die Steckdose
 "außen" komplett aus der Ladesteuerung herausnehmen, um sie z. B. für ein
-anderes Gerät (Rasenmäher, Bohrmaschine, ...) zu nutzen. Ist der Schalter
-"an", überspringt der zuständige Lade-Scheduler diese Steckdose vollständig
-– kein automatisches Ein-/Ausschalten, keine Verifikation, egal welches
-Fahrzeug ihr laut Zuordnung gerade zugewiesen ist. Ein-/Ausschalten während
-der Pause bleibt vollständig manuell; die Überlast-Vermeidung der jeweils
-anderen Steckdose bleibt trotzdem korrekt, da sie weiterhin den echten
-Leistungssensor ausliest, unabhängig davon, was tatsächlich angeschlossen
-ist.
+anderes Gerät (Rasenmäher, Bohrmaschine, ...) zu nutzen. Wird der Schalter
+eingeschaltet, schaltet der Blueprint "Twizy: Steckdose pausieren" die
+Steckdose sofort mit ein. Solange die Pause aktiv ist, überspringt der
+zuständige Lade-Scheduler diese Steckdose vollständig – kein automatisches
+Ein-/Ausschalten, keine Verifikation, egal welches Fahrzeug ihr laut
+Zuordnung gerade zugewiesen ist. Danach bleibt Ein-/Ausschalten vollständig
+manuell; die Überlast-Vermeidung der jeweils anderen Steckdose bleibt
+trotzdem korrekt, da sie weiterhin den echten Leistungssensor ausliest,
+unabhängig davon, was tatsächlich angeschlossen ist.
 
 Die Pause endet automatisch von selbst: Der Blueprint "Twizy: Steckdose
 pausieren" (eigene, separate Automatisierung, 1× für die Steckdose "außen"
