@@ -471,7 +471,7 @@ action:
             target:
               entity_id: "{{ on_time_today_minutes_helper }}"
             data:
-              value: "{{ prior_today_minutes + session_minutes }}"
+              value: "{{ (prior_today_minutes + session_minutes) | round(1) }}"
           - service: input_datetime.set_datetime
             target:
               entity_id: "{{ on_time_today_date_helper }}"
@@ -496,7 +496,7 @@ action:
                 target:
                   entity_id: "{{ correction_factor_helper }}"
                 data:
-                  value: "{{ updated_correction_factor }}"
+                  value: "{{ updated_correction_factor | round(2) }}"
 
   # OVMS-Restzeitschätzung bei Ladestart merken (Basis für den
   # Ladezeit-Korrekturfaktor oben) - unabhängig davon, ob manuell oder
@@ -513,7 +513,7 @@ action:
         target:
           entity_id: "{{ session_start_etr_helper }}"
         data:
-          value: "{{ states(etr_full_sensor) | float(0) if states(etr_full_sensor) not in ['unknown', 'unavailable', 'none', ''] else 0 }}"
+          value: "{{ ((states(etr_full_sensor) | float(0)) | round(0) | int) if states(etr_full_sensor) not in ['unknown', 'unavailable', 'none', ''] else 0 }}"
       - service: input_boolean.turn_off
         target:
           entity_id: "{{ charging_finished_helper }}"
