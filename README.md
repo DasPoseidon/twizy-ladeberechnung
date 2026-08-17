@@ -4,44 +4,49 @@ Automatisches, preisoptimiertes Laden zweier Renault Twizy an zwei
 schaltbaren Steckdosen ("innen"/"außen") an einem gemeinsamen 3‑kW-
 Stromkreis, mit OVMS-Standorterkennung und Tibber-Dynamiktarif.
 
-## Kurz beantwortet: Reicht ein einzelnes Blueprint?
+## Inhalt
 
-**Nein – und zwar aus einem strukturellen Grund, nicht aus Bequemlichkeit.**
-Ein Home-Assistant-Blueprint ist eine Vorlage für *eine* Automatisierung
-(oder ein Skript). Es kann keinen eigenen, dauerhaften Zustand halten. Diese
-Aufgabe braucht aber genau das:
+- [Architektur](#architektur)
+- [Voraussetzungen in Home Assistant](#voraussetzungen-in-home-assistant)
+- [Installation](#installation)
+- [Verhalten im Detail](#verhalten-im-detail)
+  - [Tibber-Preise](#tibber-preise)
+  - [Steckdosen-Zuordnung](#steckdosen-zuordnung)
+  - [Verifikation & Verbindungsprüfung](#verifikation-zu-ladebeginn--verbindungspr%C3%BCfung)
+  - [Preisoptimiertes Laden & Abfahrtszeit](#preisoptimiertes-laden--abfahrtszeit)
+  - [Selbstlernender Korrekturfaktor](#selbstlernender-korrekturfaktor-f%C3%BCr-die-ovms-restzeitsch%C3%A4tzung)
+  - [Ladeschluss-Erkennung](#ladeschluss-erkennung)
+  - [Mindest-Einschaltzeit pro Tag](#mindest-einschaltzeit-pro-tag)
+  - [Manuelles Einschalten](#manuelles-einschalten)
+  - [Gemeinsames 3-kW-Limit](#gemeinsames-3-kw-limit)
+- [Bekannte Vereinfachungen](#bekannte-vereinfachungen)
+- [Repository-Struktur](#repository-struktur)
 
-- welches Fahrzeug hängt gerade an welcher Steckdose (ändert sich bei jeder
-  Ankunft/Abfahrt),
-- ob gerade manuell übersteuert wurde,
-- der aktuell berechnete Ladeplan.
+## Architektur
 
-Ein Monolith-Blueprint, das all das in einer einzigen riesigen Automatisierung
-mit Templating nachbildet, wäre unlesbar, schwer zu debuggen und würde bei
-jeder Kleinigkeit alle anderen Teile mit anfassen.
+Ein Home-Assistant-Blueprint ist eine Vorlage für *eine* Automatisierung und
+kann keinen eigenen, dauerhaften Zustand halten. Diese Aufgabe braucht aber
+genau das: welches Fahrzeug gerade an welcher Steckdose hängt, ob manuell
+übersteuert wurde, der aktuell berechnete Ladeplan. Ein Monolith-Blueprint,
+das all das per Templating in einer einzigen Automatisierung nachbildet,
+wäre unlesbar und schwer zu warten. Deshalb die Trennung:
 
-**Der saubere Weg – und der hier gewählte:**
-
-1. Ein kleines **Helper-Paket** (`packages/twizy_charging.yaml`) legt alle
+1. Ein **Helper-Paket** (`packages/twizy_charging.yaml`) legt alle
    `input_*`-Entities an, die den Zustand halten.
 2. Zwei fokussierte, wiederverwendbare **Blueprints**
-   (`blueprints/automation/twizy/`), die jeweils eine klar abgegrenzte
-   Verantwortung haben und über diese Helper miteinander "kommunizieren":
-   - Steckdosen-Zuordnung (Ankunft & Platztausch)
-   - Lade-Scheduler (je Fahrzeug einmal instanziiert; ruft die Tibber-Preise
-     per Service ab, kein eigener Cache, und berücksichtigt das gemeinsame
-     Stromkreis-Limit nur bei der Planung, nicht per aktiver Überwachung –
-     siehe unten)
+   (`blueprints/automation/twizy/`), die über diese Helper miteinander
+   "kommunizieren":
+   - **Steckdosen-Zuordnung** – 1× angelegt, pflegt innen/außen.
+   - **Lade-Scheduler** – 2× angelegt (einmal je Fahrzeug), ruft die
+     Tibber-Preise per Service ab (kein eigener Cache) und berücksichtigt
+     das gemeinsame Stromkreis-Limit nur bei der Planung, nicht per aktiver
+     Überwachung (siehe [Gemeinsames 3-kW-Limit](#gemeinsames-3-kw-limit)).
 
 Das ist die in der Home-Assistant-Community übliche Architektur für
 Automatisierungen, die mehr als "wenn X dann Y" brauchen: Helper für
-Zustand, Blueprints/Automatisierungen für Verhalten. Alternativen wie
-AppDaemon/pyscript oder NodeRED wären ebenfalls möglich (mehr
-Programmierkomfort, z. B. für die Preisoptimierung), erfordern aber eine
-zusätzliche Laufzeitumgebung. Die hier gewählte Lösung kommt komplett mit
-Bordmitteln (Blueprints + Helpers + Templates) aus.
-
-## Architektur-Übersicht
+Zustand, Blueprints für Verhalten. Alternativen wie AppDaemon/pyscript oder
+NodeRED wären ebenfalls möglich, erfordern aber eine zusätzliche
+Laufzeitumgebung – diese Lösung kommt komplett mit Bordmitteln aus.
 
 ```
 ┌─────────────────────────┐
@@ -73,16 +78,16 @@ Bordmitteln (Blueprints + Helpers + Templates) aus.
 
 Die beiden Steckdosen haben eigenen Überlastschutz (werden bei zu hoher
 Last selbstständig `unavailable` und später wieder `off`). Es gibt daher
-**keine** dritte, aktiv überwachende Automatisierung mehr – jeder
-Lade-Scheduler prüft nur vor dem eigenen Einschalten kurz den
-Leistungssensor der jeweils anderen Steckdose.
+**keine** dritte, aktiv überwachende Automatisierung – jeder Lade-Scheduler
+prüft nur vor dem eigenen Einschalten kurz den Leistungssensor der jeweils
+anderen Steckdose.
 
 ## Voraussetzungen in Home Assistant
 
-- Offizielle **Tibber**-Integration. Die Stundenpreise werden über deren
-  Service `tibber.get_prices` abgerufen (die neueren Versionen der
-  Integration stellen `today`/`tomorrow` **nicht** mehr als Sensor-Attribute
-  bereit – nur noch aggregierte Werte wie `min_price`/`max_price`/`peak`).
+- Offizielle **Tibber**-Integration. Die Preise werden über deren Service
+  `tibber.get_prices` abgerufen (Stunden- oder Viertelstundenauflösung, je
+  nach Vertrag – wird automatisch erkannt, siehe
+  [Tibber-Preise](#tibber-preise)).
 - **OVMS**-Integration für beide Twizys mit (mindestens):
   - Standort/Zone-Entität (device_tracker oder Zone-Sensor, Zustand
     `home`/`not_home`)
@@ -99,7 +104,7 @@ Leistungssensor der jeweils anderen Steckdose.
 
 1. Repo-Inhalt in die Home-Assistant-Konfiguration übernehmen:
    - `packages/twizy_charging.yaml` nach `<config>/packages/` kopieren.
-   - Sicherstellen, dass Packages aktiviert sind:
+     Sicherstellen, dass Packages aktiviert sind:
      ```yaml
      homeassistant:
        packages: !include_dir_named packages
@@ -118,14 +123,10 @@ Leistungssensor der jeweils anderen Steckdose.
    | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren + Standort-Entität **des jeweiligen Fahrzeugs**, beide Schalter + beide Leistungssensoren |
 
    Alle Helper-Entities (Abfahrtszeiten, Ladedauer, Korrekturfaktor,
-   Zuordnungs-/Verifikations-Flags usw.) werden im Blueprint automatisch aus
-   `vehicle_id` abgeleitet (`input_boolean.<vehicle_id>_manuelles_laden` usw.)
-   – bei der zweiten Instanz muss dafür **nichts** manuell umgestellt werden,
-   nur `vehicle_id` selbst auf `twizy_2` setzen. (Frühere Versionen dieses
-   Blueprints hatten dafür ~18 einzelne Helper-Eingaben, bei denen leicht
-   vergessen werden konnte, sie für die zweite Instanz umzustellen – daher
-   die Umstellung auf automatische Ableitung.)
-
+   Zuordnungs-/Verifikations-Flags usw.) werden automatisch aus
+   `vehicle_id` abgeleitet (`input_boolean.<vehicle_id>_manuelles_laden`
+   usw.) – bei der zweiten Instanz muss dafür **nichts** manuell umgestellt
+   werden, nur `vehicle_id` selbst auf `twizy_2` setzen.
 4. In den Helpern (`Einstellungen → Geräte & Dienste → Helfer`) die
    Abfahrtszeiten pro Wochentag (`twizy_{1,2}_abfahrtszeit_montag` …
    `twizy_{1,2}_abfahrtszeit_sonntag`, je 7 Helper pro Fahrzeug) und bei
@@ -134,9 +135,7 @@ Leistungssensor der jeweils anderen Steckdose.
    (`twizy_{1,2}_mindestlaufzeit_minuten`, Default 30 min) anpassen. Am
    einfachsten geht das über das Dashboard (nächster Schritt).
 5. Optional, aber empfohlen: `dashboards/twizy_dashboard.yaml` als eigenes
-   Dashboard einbinden, damit alle Helper (Abfahrtszeiten, Ladedauer,
-   Steckdosen-Zuordnung, Debug-Werte) an einem Ort bedienbar sind, ohne sie
-   einzeln aus der Helfer-Liste heraussuchen zu müssen:
+   Dashboard einbinden, damit alle Helper an einem Ort bedienbar sind:
    1. **Einstellungen → Dashboards → "+ Dashboard hinzufügen"** →
       "Neues Dashboard von Grund auf erstellen" (beliebiger Titel, z. B.
       "Twizy").
@@ -146,41 +145,23 @@ Leistungssensor der jeweils anderen Steckdose.
       (vorhandenen Inhalt ersetzen) und speichern.
 
    Das Dashboard nutzt ausschließlich eingebaute Lovelace-Karten
-   (`entities`-Karten) – keine HACS-Zusatzkarten nötig. Falls du
-   Helper-Namen im Paket änderst, müssen die `entity:`-Zeilen in der
-   Dashboard-Datei entsprechend angepasst werden.
+   (`entities`-Karten) – keine HACS-Zusatzkarten nötig. Es zeigt Ladestrom
+   (nach Steckdose) und SoC (nach Fahrzeug) direkt aus den echten
+   Hardware-Sensoren an (siehe [Ladeschluss-Erkennung](#ladeschluss-erkennung))
+   – falls du diese Sensor-Entity-IDs oder andere Helper-Namen im Paket
+   änderst, müssen die `entity:`-Zeilen in der Dashboard-Datei entsprechend
+   angepasst werden. Alle `input_number`-Helfer haben außerdem `mode: box`
+   statt der HA-Standardeinstellung `mode: slider` gesetzt – im Dashboard
+   erscheint dadurch ein Zahlenfeld mit +/‑-Schrittweite statt eines
+   Schiebereglers, unempfindlicher gegen versehentliches Verstellen (z. B.
+   beim Scrollen auf dem Handy).
 
-   Alle `input_number`-Helfer haben `mode: box` gesetzt, statt der
-   HA-Standardeinstellung `mode: slider`: Im Dashboard erscheint dadurch ein
-   Zahlenfeld mit +/‑-Schrittweite statt eines Schiebereglers – deutlich
-   unempfindlicher gegen versehentliches Verstellen (z. B. beim Scrollen auf
-   dem Handy).
-
-## Wichtig: Helper-Werte bleiben jetzt über Neustarts hinweg erhalten
-
-Frühere Versionen von `packages/twizy_charging.yaml` hatten bei jedem Helfer
-ein `initial:` gesetzt (z. B. `initial: "07:00:00"` bei den
-Abfahrtszeiten). Das ist ein bekanntes, leicht zu übersehendes
-Home-Assistant-Verhalten: **ist bei einem YAML-`input_*`-Helfer `initial:`
-gesetzt, wird bei *jedem* Neustart bzw. Config-Reload zwangsweise dieser
-Wert verwendet – der zuvor eingestellte Wert wird dabei verworfen, nicht
-wiederhergestellt.** Ohne `initial:` stellt Home Assistant dagegen den
-zuletzt gesetzten Wert nach einem Neustart automatisch wieder her (offiziell
-dokumentiertes Verhalten der `input_*`-Integrationen). Das erklärte "die
-Einstellungen setzen sich ständig zurück" – vor allem die Abfahrtszeiten,
-die man ja typischerweise mal einstellt und dann lange nicht mehr anfasst,
-bis zum nächsten Neustart/Reload.
-
-Alle `initial:`-Einträge im Helper-Paket wurden deshalb entfernt. Nach dem
-Aktualisieren auf diese Version:
-1. `packages/twizy_charging.yaml` in der HA-Konfiguration ersetzen und neu
-   laden (YAML neu laden reicht, Neustart nicht zwingend nötig für die
-   Umstellung selbst).
-2. Alle Helper-Werte (Abfahrtszeiten, Mindestlaufzeit, Schalter usw.) **ein
-   letztes Mal** wie gewünscht setzen – der zuletzt vor dieser Umstellung
-   gesetzte Wert könnte durch einen vorherigen Reset bereits auf dem alten
-   `initial`-Wert stehen.
-3. Ab jetzt bleiben diese Werte über Neustarts/Reloads hinweg erhalten.
+> **Hinweis:** Die Helper in `packages/twizy_charging.yaml` sind bewusst
+> *ohne* `initial:` definiert. Ist bei einem YAML-`input_*`-Helfer
+> `initial:` gesetzt, erzwingt Home Assistant bei *jedem* Neustart/Reload
+> diesen Wert statt den zuletzt eingestellten wiederherzustellen
+> (offizielles, aber leicht zu übersehendes HA-Verhalten) – ohne `initial:`
+> bleiben eingestellte Werte dagegen über Neustarts hinweg erhalten.
 
 ## Verhalten im Detail
 
@@ -189,43 +170,45 @@ Der Lade-Scheduler ruft bei jedem Prüfzyklus den Service `tibber.get_prices`
 auf (Zeitraum heute 00:00 bis übermorgen 00:00) und baut daraus die
 Preisliste – kein eigener Cache, kein Zwischenspeicher-Helper.
 
-**Preis-Zeitraster (Stunden- oder Viertelstundenpreise):** Manche
-Tibber-Verträge rechnen inzwischen viertelstündlich statt stündlich ab. Der
-Lade-Scheduler geht das nicht fest von einer der beiden Auflösungen aus,
-sondern ermittelt bei jedem Prüfzyklus aus dem tatsächlichen Abstand
-zwischen den von `tibber.get_prices` gelieferten Preiseinträgen, welches
-Zeitraster gerade gilt (`price_resolution_seconds`: 3600 bei
-Stundenpreisen, 900 bei Viertelstundenpreisen) – keine Einstellung nötig,
-funktioniert für beide Vertragsarten und passt sich automatisch an, falls
-sich das Zeitraster später nochmal ändert. Die Anzahl benötigter
-Zeitfenster (`needed_slots`), die Fenstergrenzen und die Anzeige "nächster
-Ladestart" rechnen entsprechend mit diesem erkannten Zeitraster statt fest
-mit Stunden.
+**Preis-Zeitraster wird automatisch erkannt:** Manche Tibber-Verträge
+rechnen viertelstündlich statt stündlich ab. Der Lade-Scheduler geht nicht
+fest von einer der beiden Auflösungen aus, sondern ermittelt bei jedem
+Prüfzyklus aus dem tatsächlichen Abstand zwischen den gelieferten
+Preiseinträgen, welches Zeitraster gerade gilt (`price_resolution_seconds`:
+3600 bei Stundenpreisen, 900 bei Viertelstundenpreisen) – keine Einstellung
+nötig, passt sich auch an, falls sich das Zeitraster später nochmal ändert.
+Anzahl benötigter Zeitfenster, Fenstergrenzen und die Anzeige "nächster
+Ladestart" rechnen entsprechend mit diesem erkannten Zeitraster.
 
-**Wichtig, falls du das nachvollziehen willst:** Ältere Community-Blueprints
-und -Anleitungen gehen oft davon aus, dass der Tibber-Preis-Sensor
-`today`/`tomorrow`-Attribute mit den Stundenpreisen hat. Das stimmt für die
-aktuelle offizielle Integration **nicht mehr** – der Sensor liefert nur noch
-aggregierte Werte (`min_price`, `max_price`, `avg_price`, `off_peak_1`,
-`peak`, `off_peak_2`, `intraday_price_ranking`, s.
+Dass der Scheduler den Service bei jedem Prüfzyklus aufruft, führt trotzdem
+nicht zu häufigen echten API-Aufrufen: Die Tibber-Integration ruft die
+eigentliche Tibber-API nur auf, wenn die angefragten Daten nicht schon
+lokal vorliegen – ihr interner `TibberFetchPriceCoordinator` prüft das
+alle 1–10 Minuten rein lokal und holt neue Daten nur, wenn die Preise für
+heute komplett fehlen oder die für morgen fehlen und ein randomisierter
+Zeitpunkt zwischen 14:00 und 22:00 Uhr überschritten ist – in der Praxis
+also ungefähr **1× pro Tag** (Quelle:
+[`homeassistant/components/tibber/coordinator.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/components/tibber/coordinator.py)).
+
+<details>
+<summary>Warum <code>tibber.get_prices</code> statt Sensor-Attributen?</summary>
+
+Ältere Community-Blueprints und -Anleitungen gehen oft davon aus, dass der
+Tibber-Preis-Sensor `today`/`tomorrow`-Attribute mit den Stundenpreisen
+hat. Das stimmt für die aktuelle offizielle Integration **nicht mehr** –
+der Sensor liefert nur noch aggregierte Werte (`min_price`, `max_price`,
+`avg_price`, `off_peak_1`, `peak`, `off_peak_2`, `intraday_price_ranking`,
+s.
 [`homeassistant/components/tibber/sensor.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/components/tibber/sensor.py)).
-Die vollständige Stundenliste bekommt man nur noch über den Service
-`tibber.get_prices` (Antwortformat: `{"prices": {"<Zuhause-Name>": [{"start_time": ..., "price": ...}, ...]}}`,
+Die vollständige Preisliste bekommt man nur noch über den Service
+`tibber.get_prices` (Antwortformat:
+`{"prices": {"<Zuhause-Name>": [{"start_time": ..., "price": ...}, ...]}}`,
 s.
 [`homeassistant/components/tibber/services.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/components/tibber/services.py)).
-Das kannst du in **Entwicklerwerkzeuge → Aktionen** selbst ausprobieren:
-Aktion `tibber.get_prices` auswählen, "Antwort anzeigen" aktivieren, und
-ausführen.
+Selbst ausprobieren: **Entwicklerwerkzeuge → Aktionen** → Aktion
+`tibber.get_prices` auswählen, "Antwort anzeigen" aktivieren, ausführen.
 
-Dass der Scheduler diesen Service bei jedem Prüfzyklus aufruft, führt trotzdem
-nicht zu häufigen echten API-Aufrufen: Die Tibber-Integration ruft die
-eigentliche Tibber-API dabei nur auf, wenn die angefragten Daten nicht schon
-lokal vorliegen – ihr interner `TibberFetchPriceCoordinator` prüft das
-ohnehin alle 1–10 Minuten rein lokal und holt neue Daten nur, wenn die
-Preise für heute komplett fehlen oder die für morgen fehlen und ein
-randomisierter Zeitpunkt zwischen 14:00 und 22:00 Uhr überschritten ist –
-in der Praxis also ungefähr **1× pro Tag** (Quelle:
-[`homeassistant/components/tibber/coordinator.py`](https://github.com/home-assistant/core/blob/dev/homeassistant/components/tibber/coordinator.py)).
+</details>
 
 ### Steckdosen-Zuordnung
 - Fährt ein Fahrzeug in die `home`-Zone ein, wird es "außen" zugeordnet;
@@ -237,7 +220,7 @@ in der Praxis also ungefähr **1× pro Tag** (Quelle:
   konfigurierbaren Zeitfensters (Default 15 min), wird ein Platztausch
   angenommen und die Zuordnung vertauscht.
 
-### Verifikation zu Ladebeginn & Benachrichtigung bei fehlendem Anschluss
+### Verifikation zu Ladebeginn & Verbindungsprüfung
 Da kein zuverlässiger "Kabel gesteckt"-Sensor vorausgesetzt wird, erfolgt
 die Verifikation *nach* dem Einschalten, anhand des OVMS-Lade-/Fahrzustands:
 Meldet der Sensor des zugeordneten Fahrzeugs innerhalb der Toleranzzeit
@@ -278,15 +261,16 @@ Fahrzeug wird pro Prüfzyklus (Default alle 10 min) berechnet:
   verstrichen (oder liegt kein Ladebedarf vor, s. u.), wird bis zu eine
   Woche vorausgeschaut.
 - benötigte Ladedauer: standardmäßig die von OVMS geschätzte Restzeit bis
-  voll; per Schalter-Helper (`twizy_{1,2}_eigene_ladedauer_verwenden`) auf
-  einen selbst gepflegten Minutenwert (`twizy_{1,2}_eigene_ladedauer_minuten`)
-  umschaltbar – vorbereitet für eine spätere eigene Berechnung.
-- ob die aktuelle Stunde zu den günstigsten Stunden vor der Deadline
-  gehört, die in Summe die Ladedauer abdecken.
+  voll (mit [Korrekturfaktor](#selbstlernender-korrekturfaktor-f%C3%BCr-die-ovms-restzeitsch%C3%A4tzung));
+  per Schalter-Helper (`twizy_{1,2}_eigene_ladedauer_verwenden`) auf einen
+  selbst gepflegten Minutenwert (`twizy_{1,2}_eigene_ladedauer_minuten`)
+  umschaltbar.
+- ob das aktuelle Zeitfenster zu den günstigsten Zeitfenstern vor der
+  Deadline gehört, die in Summe die Ladedauer abdecken.
 - eine **Aufhol-Logik**: reicht die verbleibende Zeit bis zur Abfahrt nicht
-  mehr aus, um die benötigte Dauer allein aus günstigen Stunden zu decken,
-  wird unabhängig vom Preis sofort weiter geladen, damit die Deadline nicht
-  gerissen wird.
+  mehr aus, um die benötigte Dauer allein aus günstigen Zeitfenstern zu
+  decken, wird unabhängig vom Preis sofort weiter geladen, damit die
+  Deadline nicht gerissen wird.
 
 **Wann ist der nächste Ladestart?** Jeder Prüfzyklus schreibt eine lesbare
 Kurzfassung in `twizy_{1,2}_naechster_ladestart` (im Dashboard als "Status"
@@ -304,17 +288,23 @@ kann dabei durchaus schon an den "arbeitsfreien" Tagen dazwischen
 stattfinden, wenn das günstiger ist). **Sind alle 7 Tage auf 00:00
 gesetzt**, gibt es keine echte Deadline und damit auch keine Aufhol-Logik –
 geladen wird dann trotzdem automatisch, aber ausschließlich zu den
-günstigsten Stunden innerhalb der bereits bekannten Tibber-Preisdaten
-(praktisch: heute + morgen, sobald bekannt). Die tägliche
-Mindest-Einschaltzeit (siehe unten) funktioniert unabhängig davon immer.
+günstigsten Zeitfenstern innerhalb der bereits bekannten Tibber-Preisdaten
+(praktisch: heute + morgen, sobald bekannt). Die
+[tägliche Mindest-Einschaltzeit](#mindest-einschaltzeit-pro-tag) funktioniert
+unabhängig davon immer.
 
-**Warum kein `schedule`-Helper?** Ein `schedule`-Helper wäre naheliegend,
-hat hier aber einen Haken: Sein `next_event`-Attribut zeigt außerhalb des
-aktuellen Zeitfensters nur den *Beginn* des nächsten Fensters (z. B.
-Mitternacht), nicht die eigentliche Abfahrtszeit des nächsten Tages. Der
-Lade-Scheduler braucht aber jederzeit (auch nachts) die tatsächliche
-nächste Abfahrtszeit, um das Preisfenster korrekt zu berechnen – dafür
-sind die 7 separaten `input_datetime`-Helper direkter nutzbar.
+<details>
+<summary>Warum kein <code>schedule</code>-Helper für die Abfahrtszeiten?</summary>
+
+Ein `schedule`-Helper wäre naheliegend, hat hier aber einen Haken: Sein
+`next_event`-Attribut zeigt außerhalb des aktuellen Zeitfensters nur den
+*Beginn* des nächsten Fensters (z. B. Mitternacht), nicht die eigentliche
+Abfahrtszeit des nächsten Tages. Der Lade-Scheduler braucht aber jederzeit
+(auch nachts) die tatsächliche nächste Abfahrtszeit, um das Preisfenster
+korrekt zu berechnen – dafür sind die 7 separaten `input_datetime`-Helper
+direkter nutzbar.
+
+</details>
 
 ### Selbstlernender Korrekturfaktor für die OVMS-Restzeitschätzung
 Die von OVMS geschätzte Restzeit bis voll ist die Grundlage der Ladeplanung
@@ -338,7 +328,7 @@ Schwelle nicht erreichen (z. B. vorzeitig abgebrochen), fließen nicht in die
 Anpassung ein. Der aktuelle Faktor ist im Dashboard unter "Einstellungen"
 als Debug-Wert sichtbar.
 
-### Laden abgeschlossen & Mindest-Einschaltzeit pro Tag
+### Ladeschluss-Erkennung
 Ist der SoC-Schwellwert erreicht, **beginnt** die Abschaltung – tatsächlich
 ausgeschaltet wird aber erst, wenn zusätzlich der gemessene Ladestrom der
 zugeordneten Steckdose durchgehend für eine einstellbare Zeit
@@ -351,31 +341,30 @@ Bestätigung wird pro Ladesitzung intern gemerkt
 (`twizy_{1,2}_ladevorgang_fertig`) und bei jedem neuen Einschalten
 zurückgesetzt. Wird die Steckdose aus einem anderen Grund abgeschaltet
 (z. B. weil das geplante günstige Preisfenster endet, bevor das Fahrzeug
-voll ist), gilt diese zusätzliche Bedingung nicht – nur das
-"eigentlich fertig, SoC-Schwelle erreicht"-Abschalten wartet auf die
-Strom-Bestätigung.
+voll ist), gilt diese zusätzliche Bedingung nicht – nur das "eigentlich
+fertig, SoC-Schwelle erreicht"-Abschalten wartet auf die Strom-Bestätigung.
 
 Der aktuelle Ladestrom wird im Dashboard in der mittleren Spalte unter
 "Ladestrom" nach Steckdose sortiert angezeigt (innen/außen, da der Strom
 physisch an der Steckdose hängt, nicht am wechselnd zugeordneten
-Fahrzeug) – direkt aus den Leistungssensoren der Steckdosen, ohne
-Zwischen-Helper. Der SoC steht dagegen, weil er eine Eigenschaft des
-Fahrzeugs ist, direkt in der jeweiligen "Twizy X – Status"-Karte, ebenfalls
-direkt aus dem OVMS-SoC-Sensor. Falls du Sensor-Entity-IDs in der
-Dashboard-Datei änderst (z. B. andere Steckdosen-Hardware), müssen die
-`entity:`-Zeilen unter "Ladestrom" und "Status" entsprechend angepasst
-werden – diese referenzieren bewusst direkt die realen Sensoren statt
-eines Pakethelfer, da es dabei rein um Anzeige geht (die
-Ladeschluss-Erkennung selbst nutzt weiterhin die im jeweiligen
-Lade-Scheduler konfigurierten `innen_power_sensor`/`aussen_power_sensor`-
-Eingaben, unabhängig vom Dashboard).
+Fahrzeug), direkt aus den Leistungssensoren der Steckdosen. Der SoC steht
+dagegen, weil er eine Eigenschaft des Fahrzeugs ist, direkt in der
+jeweiligen "Twizy X – Status"-Karte, ebenfalls direkt aus dem
+OVMS-SoC-Sensor. Beide referenzieren bewusst direkt die realen Sensoren
+statt eines Pakethelfers, da es dabei rein um Anzeige geht – die
+Ladeschluss-Erkennung selbst nutzt unabhängig vom Dashboard weiterhin die
+im jeweiligen Lade-Scheduler konfigurierten
+`innen_power_sensor`/`aussen_power_sensor`-Eingaben. Änderst du diese
+Sensor-Entity-IDs, müssen die `entity:`-Zeilen unter "Ladestrom" und
+"Status" in der Dashboard-Datei entsprechend angepasst werden.
 
-Zusätzlich gibt es eine einstellbare **Mindest-Einschaltzeit pro Tag**
+### Mindest-Einschaltzeit pro Tag
+Damit die Steckdose auch an Tagen, an denen das Fahrzeug schon voll ist
+(z. B. weil es kaum gefahren wurde), nicht komplett stromlos bleibt, gibt
+es eine einstellbare Mindest-Einschaltzeit
 (`twizy_{1,2}_mindestlaufzeit_minuten`, Default 30 min, 0 deaktiviert die
-Funktion): Damit die Steckdose auch an Tagen, an denen das Fahrzeug schon
-voll ist (z. B. weil es kaum gefahren wurde), nicht komplett stromlos
-bleibt, wird sie zur günstigsten verbleibenden Stunde trotzdem nochmal
-eingeschaltet, bis die Mindestzeit erreicht ist.
+Funktion): Sie wird zu den günstigsten verbleibenden Zeitfenstern trotzdem
+nochmal für die fehlende Zeit eingeschaltet.
 
 Dafür führt der Lade-Scheduler intern einen Tages-Zähler
 (`twizy_{1,2}_einschaltzeit_minuten_heute` + `twizy_{1,2}_einschaltzeit_tag`),
@@ -392,7 +381,8 @@ Zustandsänderung keinen Automatisierungs-Kontext hat – eine gängige, nicht
 hundertprozentig fälschungssichere Heuristik), wird das als manueller
 Ladewunsch übernommen: Es wird sofort weitergeladen, die Abfahrtszeit bleibt
 aber als spätester "voll"-Zeitpunkt gültig – die Automatisierung schaltet
-weiterhin ab, sobald der SoC-Schwellwert erreicht ist.
+weiterhin ab, sobald der SoC-Schwellwert erreicht ist (siehe
+[Ladeschluss-Erkennung](#ladeschluss-erkennung)).
 
 ### Gemeinsames 3-kW-Limit
 Es gibt **keine aktive Überwachung/Abschaltung** durch die Automatisierung –
@@ -406,7 +396,7 @@ ob deren gemessene Leistung plus die eigene, typische Ladeleistung
 Wenn ja, wird nicht eingeschaltet – der nächste Prüfzyklus (Default alle
 10 min) versucht es erneut, z. B. sobald das andere Fahrzeug fertig geladen
 hat. Eine manuell eingeschaltete Steckdose übersteuert diese Vorsicht
-bewusst (siehe "Manuelles Einschalten").
+bewusst (siehe [Manuelles Einschalten](#manuelles-einschalten)).
 
 Kommt es trotzdem zu einer Überlast (z. B. weil beide Steckdosen manuell
 gleichzeitig eingeschaltet wurden oder die tatsächliche Ladeleistung höher
@@ -454,7 +444,7 @@ packages/
 blueprints/automation/twizy/
   socket_assignment.yaml         # innen/außen-Zuordnung
   charge_scheduler.yaml          # Lade-Entscheidung je Fahrzeug (2x instanziieren),
-                                  # inkl. Überlast-Vermeidung bei der Planung
+                                  # inkl. Überlast-Vermeidung und Ladeschluss-Erkennung
 dashboards/
   twizy_dashboard.yaml           # fertiges Dashboard (nur eingebaute Karten)
 ```

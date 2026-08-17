@@ -3,7 +3,6 @@ views:
   - title: Twizy
     path: twizy
     icon: mdi:car-electric
-    cards: []
     type: sections
     max_columns: 4
     show_icon_and_title: true
@@ -58,8 +57,6 @@ views:
                 name: Aktueller Ladeplan (Debug)
       - type: grid
         cards:
-          - type: heading
-            heading: Neuer Abschnitt
           - type: entities
             title: Allgemein
             entities:
@@ -78,8 +75,6 @@ views:
                 name: "Außen"
       - type: grid
         cards:
-          - type: heading
-            heading: Neuer Abschnitt
           - type: entities
             title: Twizy 2 – Status
             entities:

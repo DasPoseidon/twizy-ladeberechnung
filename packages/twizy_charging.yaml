@@ -325,11 +325,11 @@ input_number:
 # ---------------------------------------------------------------------------
 input_text:
   twizy_1_ladeplan_offsets:
-    name: "Twizy 1 – aktuell geplante Lade-Epoch-Stunden (informativ/Debug)"
+    name: "Twizy 1 – aktuell geplante Lade-Zeitfenster (informativ/Debug)"
     max: 255
 
   twizy_2_ladeplan_offsets:
-    name: "Twizy 2 – aktuell geplante Lade-Epoch-Stunden (informativ/Debug)"
+    name: "Twizy 2 – aktuell geplante Lade-Zeitfenster (informativ/Debug)"
     max: 255
 
   # Lesbare Anzeige, wann die Steckdose als nächstes (wieder) angeht -
