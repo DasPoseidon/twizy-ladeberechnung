@@ -211,6 +211,7 @@ input_number:
     max: 600
     step: 5
     unit_of_measurement: min
+    mode: box
 
   twizy_2_eigene_ladedauer_minuten:
     name: "Twizy 2 – selbst berechnete Ladedauer"
@@ -219,6 +220,7 @@ input_number:
     max: 600
     step: 5
     unit_of_measurement: min
+    mode: box
 
   twizy_max_gesamtleistung_watt:
     name: "Twizy gemeinsamer Stromkreis – maximale Gesamtleistung"
@@ -232,6 +234,7 @@ input_number:
     # haben eigenen Überlastschutz. Fällt dieser Helfer (z. B. ganz frisch
     # angelegt) auf den Minimalwert zurück, greift im Blueprint zusätzlich
     # ein eingebauter Fallback von 3000 W.
+    mode: box
 
   twizy_1_mindestlaufzeit_minuten:
     name: "Twizy 1 – Mindest-Einschaltzeit der Steckdose pro Tag (auch wenn voll)"
@@ -240,6 +243,7 @@ input_number:
     max: 240
     step: 5
     unit_of_measurement: min
+    mode: box
 
   twizy_2_mindestlaufzeit_minuten:
     name: "Twizy 2 – Mindest-Einschaltzeit der Steckdose pro Tag (auch wenn voll)"
@@ -248,6 +252,7 @@ input_number:
     max: 240
     step: 5
     unit_of_measurement: min
+    mode: box
 
   # Interne Zähler: bereits erreichte Einschaltzeit "heute" (siehe Datum
   # unten). Werden vom Lade-Scheduler bei jedem Ausschalten fortgeschrieben,
@@ -259,6 +264,7 @@ input_number:
     max: 1500
     step: 1
     unit_of_measurement: min
+    mode: box
 
   twizy_2_einschaltzeit_minuten_heute:
     name: "Twizy 2 – Steckdose heute bereits eingeschaltet (Minuten, intern)"
@@ -267,6 +273,7 @@ input_number:
     max: 1500
     step: 1
     unit_of_measurement: min
+    mode: box
 
   # Selbstlernender Korrekturfaktor für die OVMS-Restzeitschätzung: wird
   # nach jeder Ladung, die mindestens die Korrektur-SoC-Schwelle des
@@ -280,6 +287,7 @@ input_number:
     min: 0.3
     max: 3.0
     step: 0.05
+    mode: box
 
   twizy_2_ladezeit_korrekturfaktor:
     name: "Twizy 2 – Ladezeit-Korrekturfaktor (selbstlernend)"
@@ -287,6 +295,7 @@ input_number:
     min: 0.3
     max: 3.0
     step: 0.05
+    mode: box
 
   # OVMS-Restzeitschätzung zum Zeitpunkt des letzten Ladestarts (intern,
   # Grundlage für den Korrekturfaktor oben - nicht zur manuellen Bedienung
@@ -298,6 +307,7 @@ input_number:
     max: 1500
     step: 1
     unit_of_measurement: min
+    mode: box
 
   twizy_2_sitzung_start_etr_minuten:
     name: "Twizy 2 – OVMS-Restzeitschätzung bei Ladestart (intern)"
@@ -306,6 +316,7 @@ input_number:
     max: 1500
     step: 1
     unit_of_measurement: min
+    mode: box
 
   # Aktueller Ladestrom der jeweils zugeordneten Steckdose (informativ,
   # Dashboard) - wird vom Lade-Scheduler bei jeder Auswertung aus dem
@@ -318,6 +329,7 @@ input_number:
     max: 4000
     step: 1
     unit_of_measurement: W
+    mode: box
 
   twizy_2_aktueller_ladestrom_watt:
     name: "Twizy 2 – aktueller Ladestrom"
@@ -326,6 +338,7 @@ input_number:
     max: 4000
     step: 1
     unit_of_measurement: W
+    mode: box
 
 # ---------------------------------------------------------------------------
 # Ladeplan (informativ/Debug) – der Lade-Scheduler ruft die Tibber-Preise

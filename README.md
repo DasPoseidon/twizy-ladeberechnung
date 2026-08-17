@@ -150,6 +150,12 @@ Leistungssensor der jeweils anderen Steckdose.
    Helper-Namen im Paket änderst, müssen die `entity:`-Zeilen in der
    Dashboard-Datei entsprechend angepasst werden.
 
+   Alle `input_number`-Helfer haben `mode: box` gesetzt, statt der
+   HA-Standardeinstellung `mode: slider`: Im Dashboard erscheint dadurch ein
+   Zahlenfeld mit +/‑-Schrittweite statt eines Schiebereglers – deutlich
+   unempfindlicher gegen versehentliches Verstellen (z. B. beim Scrollen auf
+   dem Handy).
+
 ## Wichtig: Helper-Werte bleiben jetzt über Neustarts hinweg erhalten
 
 Frühere Versionen von `packages/twizy_charging.yaml` hatten bei jedem Helfer
