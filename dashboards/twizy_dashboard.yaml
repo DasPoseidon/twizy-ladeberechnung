@@ -15,6 +15,8 @@ views:
             entities:
               - entity: input_text.twizy_1_naechster_ladestart
                 name: Nächster Ladestart
+              - entity: sensor.meintwizy_battery_level
+                name: SoC
           - type: entities
             title: Twizy 1 – Abfahrtszeiten
             entities:
@@ -68,17 +70,12 @@ views:
               - entity: input_number.twizy_max_gesamtleistung_watt
                 name: Max. Gesamtleistung Stromkreis
           - type: entities
-            title: Ladestrom & SoC
+            title: Ladestrom
             entities:
-              - entity: input_number.twizy_socket_innen_ladestrom_watt
-                name: "Innen: Ladestrom"
-              - entity: input_number.twizy_socket_innen_soc_prozent
-                name: "Innen: SoC"
-              - type: divider
-              - entity: input_number.twizy_socket_aussen_ladestrom_watt
-                name: "Außen: Ladestrom"
-              - entity: input_number.twizy_socket_aussen_soc_prozent
-                name: "Außen: SoC"
+              - entity: sensor.twizygarage_twizystecker_innen_leistung
+                name: "Innen"
+              - entity: sensor.twizygarage_twizystecker_außen_leistung
+                name: "Außen"
       - type: grid
         cards:
           - type: heading
@@ -88,6 +85,8 @@ views:
             entities:
               - entity: input_text.twizy_2_naechster_ladestart
                 name: Nächster Ladestart
+              - entity: sensor.meintwizy2_battery_level
+                name: SoC
           - type: entities
             title: Twizy 2 – Abfahrtszeiten
             entities:

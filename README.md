@@ -355,13 +355,20 @@ voll ist), gilt diese zusätzliche Bedingung nicht – nur das
 "eigentlich fertig, SoC-Schwelle erreicht"-Abschalten wartet auf die
 Strom-Bestätigung.
 
-Der aktuelle Ladestrom wird dafür laufend in
-`twizy_socket_{innen,aussen}_ladestrom_watt` gespiegelt und im Dashboard in
-der mittleren Spalte unter "Ladestrom & SoC" angezeigt – nach Steckdose
-sortiert statt nach Fahrzeug, da Ladestrom und SoC physisch an der
-Steckdose hängen, nicht am (wechselnden) zugeordneten Fahrzeug. Aus
-demselben Grund steht dort auch der SoC des jeweils zugeordneten Fahrzeugs
-(`twizy_socket_{innen,aussen}_soc_prozent`).
+Der aktuelle Ladestrom wird im Dashboard in der mittleren Spalte unter
+"Ladestrom" nach Steckdose sortiert angezeigt (innen/außen, da der Strom
+physisch an der Steckdose hängt, nicht am wechselnd zugeordneten
+Fahrzeug) – direkt aus den Leistungssensoren der Steckdosen, ohne
+Zwischen-Helper. Der SoC steht dagegen, weil er eine Eigenschaft des
+Fahrzeugs ist, direkt in der jeweiligen "Twizy X – Status"-Karte, ebenfalls
+direkt aus dem OVMS-SoC-Sensor. Falls du Sensor-Entity-IDs in der
+Dashboard-Datei änderst (z. B. andere Steckdosen-Hardware), müssen die
+`entity:`-Zeilen unter "Ladestrom" und "Status" entsprechend angepasst
+werden – diese referenzieren bewusst direkt die realen Sensoren statt
+eines Pakethelfer, da es dabei rein um Anzeige geht (die
+Ladeschluss-Erkennung selbst nutzt weiterhin die im jeweiligen
+Lade-Scheduler konfigurierten `innen_power_sensor`/`aussen_power_sensor`-
+Eingaben, unabhängig vom Dashboard).
 
 Zusätzlich gibt es eine einstellbare **Mindest-Einschaltzeit pro Tag**
 (`twizy_{1,2}_mindestlaufzeit_minuten`, Default 30 min, 0 deaktiviert die
