@@ -43,11 +43,13 @@ blueprint:
        schaltet trotzdem ab, sobald das Fahrzeug voll ist).
     7. Nach dem Einschalten wird anhand des OVMS-Lade-/Fahrzustands-Sensors
        geprüft, ob das Fahrzeug tatsächlich zu laden beginnt. Meldet der
-       Sensor innerhalb der Toleranzzeit keinen "lädt"-Zustand, wird davon
-       ausgegangen, dass die Steckdosen-Zuordnung falsch ist: Es wird
-       wieder ausgeschaltet und eine Benachrichtigung ausgelöst. Ein
-       eigener "Kabel gesteckt"-Sensor wird bewusst nicht vorausgesetzt, da
-       viele OVMS-Setups keinen solchen Sensor bereitstellen.
+       Sensor innerhalb der Toleranzzeit keinen "lädt"-Zustand (falsche
+       Zuordnung oder Fahrzeug nicht angeschlossen), wird nur eine
+       Benachrichtigung ausgelöst - die Steckdose bleibt an, damit sie
+       nicht bei jedem Prüfzyklus fürs restliche Ladefenster an-/
+       ausgeklickt wird. Ein eigener "Kabel gesteckt"-Sensor wird bewusst
+       nicht vorausgesetzt, da viele OVMS-Setups keinen solchen Sensor
+       bereitstellen.
     8. Das gemeinsame Stromkreis-Limit wird NICHT aktiv überwacht (die
        Steckdosen haben eigenen Überlastschutz: bei Überlast wird die
        jeweilige Steckdose selbstständig `unavailable` und später wieder im
@@ -839,10 +841,15 @@ action:
       - conditions:
           - condition: template
             value_template: "{{ verification_failed }}"
+        # Bewusst KEIN switch.turn_off hier: ohne echten Kabel-Sensor lässt
+        # sich "nicht angeschlossen" nicht von "falsche Zuordnung"
+        # unterscheiden - ein Abschalten+Neuversuch bei jedem Prüfzyklus
+        # würde die Steckdose fürs restliche Ladefenster dauerhaft an-/
+        # ausklicken. Stattdessen bleibt die Steckdose einfach an (die
+        # normale should_charge_now-Logik schaltet sie regulär ab, sobald
+        # das Preisfenster/die Deadline das vorsieht) und es wird nur
+        # einmalig benachrichtigt.
         sequence:
-          - service: switch.turn_off
-            target:
-              entity_id: "{{ current_switch }}"
           - service: persistent_notification.create
             data:
               notification_id: "twizy_{{ vehicle_id }}_zuordnung_warnung"
@@ -854,11 +861,11 @@ action:
                 {{ (verification_grace_seconds / 60) | round(0) | int }}
                 Minuten keinen "lädt aktiv"-Zustand. Mögliche Ursachen:
                 Fahrzeug ist nicht angeschlossen, oder die
-                input_select-Zuordnung stimmt nicht. Steckdose wurde
-                sicherheitshalber wieder ausgeschaltet. (Wird beim
-                nächsten Prüfzyklus automatisch erneut versucht, sofern
-                Preis/Deadline oder das Verbindungsprüfungs-Zeitfenster
-                das hergeben.)
+                input_select-Zuordnung stimmt nicht. Die Steckdose bleibt
+                vorerst eingeschaltet (kein automatisches Abschalten mehr
+                bei fehlgeschlagener Verifikation, um wiederholtes An-/
+                Ausklicken übers Ladefenster zu vermeiden) - bitte
+                manuell prüfen, ob das richtige Fahrzeug angeschlossen ist.
 
 mode: single
 max_exceeded: silent

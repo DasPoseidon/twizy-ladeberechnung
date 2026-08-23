@@ -234,13 +234,18 @@ konfigurierbar), gilt die aktuelle Zuordnung als bestätigt
 (`input_boolean.twizy_{1,2}_zuordnung_geprueft` → an – **ein eigener Helper
 je Fahrzeug**, nicht geteilt, sonst würde eine erfolgreiche Verifikation
 von Fahrzeug 1 fälschlich auch für Fahrzeug 2 gelten). Passiert das nicht,
-wird die Steckdose wieder ausgeschaltet und eine Benachrichtigung
-ausgelöst (dedupliziert über eine feste `notification_id`, kein Spam bei
-wiederholten Versuchen) – mit Hinweis auf die beiden möglichen Ursachen:
-falsche Zuordnung *oder* Fahrzeug nicht angeschlossen. `socket_assignment.yaml`
-setzt den jeweiligen Verifikations-Helper bei jeder neuen Zuordnung
-(Ankunft oder Platztausch) zurück, damit auch ein Steckdosenwechsel erneut
-geprüft wird.
+wird **nur eine Benachrichtigung ausgelöst** (dedupliziert über eine feste
+`notification_id`, kein Spam bei wiederholten Versuchen) – mit Hinweis auf
+die beiden möglichen Ursachen: falsche Zuordnung *oder* Fahrzeug nicht
+angeschlossen. Die Steckdose wird bewusst **nicht** automatisch
+abgeschaltet: Ohne echten Kabel-Sensor lässt sich "nicht angeschlossen"
+nicht zuverlässig von "falsche Zuordnung" unterscheiden, und ein
+Abschalten+Neuversuch bei jedem Prüfzyklus würde die Steckdose fürs
+restliche Ladefenster dauerhaft an-/ausklicken. Stattdessen bleibt sie
+einfach an, bis die normale Preis-/Deadline-Logik sie regulär abschaltet.
+`socket_assignment.yaml` setzt den jeweiligen Verifikations-Helper bei
+jeder neuen Zuordnung (Ankunft oder Platztausch) zurück, damit auch ein
+Steckdosenwechsel erneut geprüft wird.
 
 Damit "zuhause + Ladebedarf, aber nicht angeschlossen" nicht erst kurz vor
 einer knappen Deadline auffällt (wo die Aufhol-Logik ohnehin einen
@@ -249,10 +254,10 @@ zusätzlich eine **Verbindungsprüfung kurz nach Ankunft**: Innerhalb eines
 Zeitfensters (`connectivity_probe_window`, Default 10 min) nach Ankunft
 zuhause wird bei echtem Ladebedarf und noch unverifizierter Zuordnung
 unabhängig vom Strompreis kurz versucht einzuschalten, rein um die
-Verbindung zu testen. Nach diesem Zeitfenster wird dafür nicht mehr
-automatisch eingeschaltet (nur noch preis-/deadline-getrieben) – sonst
-würde die Steckdose bei einem tatsächlich dauerhaft nicht angeschlossenen
-Fahrzeug den ganzen Tag über alle paar Minuten klicken. Über
+Verbindung frühzeitig zu testen. Nach diesem Zeitfenster wird dafür nicht
+mehr unabhängig vom Preis eingeschaltet (nur noch preis-/deadline-getrieben)
+– sonst würde ein noch unverifiziertes Fahrzeug dauerhaft unabhängig vom
+Strompreis laden, bis die Zuordnung manuell korrigiert wird. Über
 `twizy_{1,2}_verbindungspruefung_aktiv` lässt sich diese Prüfung pro
 Fahrzeug komplett ein-/ausschalten – bei "aus" kommt die Benachrichtigung
 nur noch bei einem tatsächlichen preis-/deadline-getriebenen Ladeversuch
@@ -449,12 +454,13 @@ wieder eingeschaltet werden soll.
   nach der Toleranzzeit wieder ab, wenn OVMS kein "lädt aktiv" meldet,
   selbst wenn das gewünscht gewesen wäre. Bei Bedarf `verification_grace_period`
   großzügiger einstellen oder die Bedingung im Blueprint anpassen.
-- Die Verbindungsprüfung nach Ankunft kann ohne echten Kabel-Sensor nicht
-  zwischen "nicht angeschlossen" und "falsche Zuordnung" unterscheiden –
-  die Benachrichtigung nennt beide als mögliche Ursache. Innerhalb des
-  Prüfzeitfensters kann die Steckdose dabei mehrfach kurz an-/ausgehen
-  (jeder Prüfzyklus versucht es erneut), falls das Fahrzeug tatsächlich
-  nicht angeschlossen ist.
+- Die Verifikation (und die Verbindungsprüfung nach Ankunft) kann ohne
+  echten Kabel-Sensor nicht zwischen "nicht angeschlossen" und "falsche
+  Zuordnung" unterscheiden – die Benachrichtigung nennt beide als mögliche
+  Ursache und die Steckdose bleibt in beiden Fällen einfach an (siehe
+  [Verifikation & Verbindungsprüfung](#verifikation-zu-ladebeginn--verbindungspr%C3%BCfung)).
+  Steckt tatsächlich das falsche Fahrzeug an der Steckdose, lädt es also
+  ggf. weiter, bis die Zuordnung manuell korrigiert wird.
 
 ## Repository-Struktur
 
