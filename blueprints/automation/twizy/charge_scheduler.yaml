@@ -459,25 +459,14 @@ action:
       current_power_sensor: "{{ innen_power_sensor if states(innen_socket_helper) == vehicle_id else aussen_power_sensor }}"
       current_socket_helper: "{{ innen_socket_helper if states(innen_socket_helper) == vehicle_id else aussen_socket_helper }}"
       other_socket_helper: "{{ aussen_socket_helper if states(innen_socket_helper) == vehicle_id else innen_socket_helper }}"
-      # OVMS liefert die Restzeit bis voll je nach Setup nicht als reine
-      # Zahl: mancher Zustandstext hat ein angehängtes Einheitssuffix
-      # (z. B. "90m"), andere kombinieren Stunden+Minuten in einem Text
-      # (z. B. "3h 34min") - ein strikter float()-Parse oder das Extrahieren
-      # nur der ERSTEN Zahl daraus wäre in beiden Fällen falsch oder würde
-      # lautlos auf einen Default zurückfallen. Manche OVMS-Setups liefern
-      # daher zusätzlich ein "raw_value"-Attribut mit dem unformatierten
-      # Minutenwert - falls vorhanden, wird bevorzugt dieses verwendet;
-      # andernfalls wird die erste Zahl aus dem Zustandstext als Fallback
-      # genutzt (passend für einfache Formate wie "90m", aber NICHT für
-      # kombinierte Stunden+Minuten-Texte - dafür ist das raw_value-Attribut
-      # nötig). Liefert weder Attribut noch Zustandstext eine Zahl (z. B.
-      # "unknown"), ist ovms_etr_minutes "none".
-      ovms_etr_raw_attr: "{{ state_attr(etr_full_sensor, 'raw_value') }}"
-      ovms_etr_raw_attr_minutes: "{{ (ovms_etr_raw_attr | float(-1)) if ovms_etr_raw_attr is not none else -1 }}"
-      ovms_etr_state_matches: "{{ states(etr_full_sensor) | regex_findall('[0-9]+(?:\\.[0-9]+)?') }}"
+      # Der Zustandstext von etr_full_sensor ist bei den hier konkret
+      # verwendeten OVMS-Sensoren nicht direkt als Zahl nutzbar (z. B.
+      # "3h 34min") - das "raw_value"-Attribut liefert stattdessen den
+      # unformatierten Minutenwert. Ist der Sensor selbst nicht verfügbar,
+      # ist ovms_etr_minutes "none".
       ovms_etr_minutes: >-
-        {{ ovms_etr_raw_attr_minutes if ovms_etr_raw_attr_minutes >= 0 else
-           ((ovms_etr_state_matches[0] | float) if ovms_etr_state_matches else none) }}
+        {{ none if states(etr_full_sensor) in ['unknown', 'unavailable'] else
+           state_attr(etr_full_sensor, 'raw_value') | float }}
 
   - if:
       - condition: template
@@ -520,7 +509,7 @@ action:
               today_date_str: "{{ now().strftime('%Y-%m-%d') }}"
               stored_date_str: "{{ states(on_time_today_date_helper) }}"
               session_minutes: "{{ (trigger.to_state.last_changed - trigger.from_state.last_changed).total_seconds() / 60 }}"
-              prior_today_minutes: "{{ (states(on_time_today_minutes_helper) | float(0)) if stored_date_str == today_date_str else 0 }}"
+              prior_today_minutes: "{{ (states(on_time_today_minutes_helper) | float) if stored_date_str == today_date_str else 0 }}"
           - service: input_number.set_value
             target:
               entity_id: "{{ on_time_today_minutes_helper }}"
@@ -536,8 +525,8 @@ action:
           # beim Einschalten eine gültige OVMS-Restzeitschätzung vorlag
           # (session_start_etr_helper, siehe switch_on-Schritt unten).
           - variables:
-              final_soc: "{{ states(soc_sensor) | float(0) }}"
-              predicted_etr_minutes: "{{ states(session_start_etr_helper) | float(0) }}"
+              final_soc: "{{ states(soc_sensor) | float }}"
+              predicted_etr_minutes: "{{ states(session_start_etr_helper) | float }}"
               correction_ratio: >-
                 {{ [[session_minutes / predicted_etr_minutes, 0.3] | max, 6.0] | min if predicted_etr_minutes > 0 else none }}
           - if:
@@ -545,7 +534,7 @@ action:
                 value_template: "{{ final_soc >= correction_factor_soc_threshold and correction_ratio is not none }}"
             then:
               - variables:
-                  updated_correction_factor: "{{ ((states(correction_factor_helper) | float(1.0)) * 0.7) + (correction_ratio * 0.3) }}"
+                  updated_correction_factor: "{{ ((states(correction_factor_helper) | float) * 0.7) + (correction_ratio * 0.3) }}"
               - service: input_number.set_value
                 target:
                   entity_id: "{{ correction_factor_helper }}"
@@ -615,7 +604,7 @@ action:
     response_variable: tibber_price_response
 
   - variables:
-      duration_minutes: "{{ 120 if ovms_etr_minutes is none else (ovms_etr_minutes * (states(correction_factor_helper) | float(1.0))) }}"
+      duration_minutes: "{{ 120 if ovms_etr_minutes is none else (ovms_etr_minutes * (states(correction_factor_helper) | float)) }}"
       # Abfahrtszeit ist pro Wochentag einstellbar. Konvention: 00:00 Uhr an
       # einem Tag bedeutet "an diesem Tag kein Ladebedarf" (kein Auto-Fahren
       # geplant) - ohne dafür einen eigenen "aktiv"-Helper zu brauchen. Es
@@ -630,7 +619,7 @@ action:
         {% for day_offset in range(0, 8) %}
           {% set idx = (now().weekday() + day_offset) % 7 %}
           {% set t = states(departure_time_weekday_helpers[idx]) %}
-          {% if t not in ['00:00:00', 'unknown', 'unavailable', 'none', ''] %}
+          {% if t != '00:00:00' %}
             {% set candidate = (now() + timedelta(days=day_offset)).replace(hour=(t.split(':')[0] | int), minute=(t.split(':')[1] | int), second=0, microsecond=0) %}
             {% if candidate > now() %}
               {% set ns.items = ns.items + [candidate.timestamp()] %}
@@ -650,7 +639,7 @@ action:
       # versucht ihn danach zurückzuparsen - Zahlen/Listen überstehen das,
       # ein Datetime-Objekt nicht (wird zu einem nicht mehr nutzbaren Text).
       deadline_epoch: "{{ deadline_candidate_epochs[0] if has_real_deadline else (now().timestamp() + 3650 * 86400) }}"
-      soc: "{{ states(soc_sensor) | float(0) }}"
+      soc: "{{ states(soc_sensor) | float }}"
       is_full: "{{ soc >= (soc_full_threshold | float) }}"
       is_manual: "{{ is_state(manual_flag_helper, 'on') }}"
       # Kein aktives Überwachen/Abschalten wegen Überlast - die Steckdosen
@@ -661,7 +650,7 @@ action:
       # voraussichtlich überschreiten würde.
       would_overload_if_started: >-
         {{ is_state(other_switch, 'on') and
-           ((states(other_power_sensor) | float(0)) + typical_power_watt) > (states(max_power_helper) | float(3000)) }}
+           ((states(other_power_sensor) | float(0)) + typical_power_watt) > (states(max_power_helper) | float) }}
       minutes_to_deadline: "{{ (deadline_epoch - now().timestamp()) / 60 }}"
       must_charge_now: "{{ minutes_to_deadline <= (duration_minutes + 5) }}"
       # Preise aus der Service-Response von tibber.get_prices (oben) bauen.
@@ -718,8 +707,8 @@ action:
       # ohnehin ab). "heute" wird aus dem Tages-Zähler gelesen, der bei
       # jedem Ausschalten fortgeschrieben wird (oben) - läuft der Zähler
       # noch auf einem alten Datum, gilt er als 0 (neuer Tag).
-      on_time_today_effective: "{{ (states(on_time_today_minutes_helper) | float(0)) if states(on_time_today_date_helper) == now().strftime('%Y-%m-%d') else 0 }}"
-      remaining_min_on_minutes: "{{ [((states(min_on_minutes_helper) | float(0)) - on_time_today_effective), 0] | max }}"
+      on_time_today_effective: "{{ (states(on_time_today_minutes_helper) | float) if states(on_time_today_date_helper) == now().strftime('%Y-%m-%d') else 0 }}"
+      remaining_min_on_minutes: "{{ [((states(min_on_minutes_helper) | float) - on_time_today_effective), 0] | max }}"
       maintenance_needed_slots: "{{ [((remaining_min_on_minutes / price_resolution_minutes) | round(0, 'ceil') | int), 0] | max }}"
       # Fenster für die Mindest-Einschaltzeit bewusst auf "heute" begrenzt
       # (unabhängig davon, wie weit die echte Lade-Deadline entfernt ist -

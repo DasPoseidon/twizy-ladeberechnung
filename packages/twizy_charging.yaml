@@ -11,9 +11,10 @@
 # gesetzt, wird bei JEDEM Neustart/Reload zwangsweise dieser Wert verwendet
 # und der zuvor eingestellte Wert verworfen (offizielles HA-Verhalten, kein
 # Bug). Ohne "initial:" fallen frisch angelegte Helfer beim allerersten Mal
-# auf einen Domain-Standard zurück (z. B. false, 0/Minimalwert, "unbekannt"),
-# was hier überall unkritisch ist - die Blueprints behandeln
-# unknown/unavailable/Minimalwerte ohnehin defensiv.
+# auf einen Domain-Standard zurück (false/0/Minimalwert) - nie auf
+# "unknown"/"unavailable" (das ist ein input_*-Domain-Garantie, kein
+# spezifisches Verhalten dieses Setups). Die Blueprints verlassen sich
+# deshalb direkt darauf, ohne diese Helfer zusätzlich defensiv abzufangen.
 #
 # Einbinden in configuration.yaml:
 #
