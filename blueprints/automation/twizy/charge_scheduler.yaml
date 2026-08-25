@@ -481,14 +481,22 @@ action:
     then:
       - stop: "Steckdose außen pausiert (z. B. Rasenmäher) - {{ vehicle_id }} greift nicht ein"
 
-  # --- manuelles Ein-/Ausschalten erkennen (Heuristik: kein automation-Kontext) ---
+  # --- manuelles Ein-/Ausschalten erkennen (Heuristik: Kontext hat eine
+  # Nutzer-ID - die setzt Home Assistant nur, wenn ein Mensch über
+  # UI/App/Sprachassistent schaltet, nicht bei einem Service-Aufruf aus
+  # einer Automatisierung heraus. Ein per parent_id-Prüfung früher genutzter
+  # Ansatz war fehleranfällig: Läuft dieser Scheduler selbst z. B. durch den
+  # zeitgesteuerten Prüfzyklus (der keinen eigenen Kontext hat) und schaltet
+  # dabei automatisch ein, hat die resultierende Zustandsänderung ebenfalls
+  # parent_id "none" - ununterscheidbar von einem echten manuellen
+  # Einschalten. ---
   - choose:
       - conditions:
           - condition: trigger
             id: switch_on
           - condition: template
             value_template: >
-              {{ trigger.entity_id == current_switch and trigger.to_state.context.parent_id is none }}
+              {{ trigger.entity_id == current_switch and trigger.to_state.context.user_id is not none }}
         sequence:
           - service: input_boolean.turn_on
             target:

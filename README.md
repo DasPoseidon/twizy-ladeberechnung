@@ -420,8 +420,11 @@ automatisch zurück (erkannt am gespeicherten Datum).
 
 ### Manuelles Einschalten
 Wird eine Steckdose von Hand eingeschaltet (erkannt daran, dass die
-Zustandsänderung keinen Automatisierungs-Kontext hat – eine gängige, nicht
-hundertprozentig fälschungssichere Heuristik), wird das als manueller
+Zustandsänderung eine Nutzer-ID im Kontext trägt – die setzt Home Assistant
+nur bei Bedienung über UI/App/Sprachassistent, nicht bei einem
+Service-Aufruf aus einer Automatisierung heraus; eine gängige, nicht
+hundertprozentig fälschungssichere Heuristik – ein physischer Tastendruck
+direkt am Gerät wird z. B. nicht erkannt), wird das als manueller
 Ladewunsch übernommen: Es wird sofort weitergeladen, die Abfahrtszeit bleibt
 aber als spätester "voll"-Zeitpunkt gültig – die Automatisierung schaltet
 weiterhin ab, sobald der SoC-Schwellwert erreicht ist (siehe
@@ -486,9 +489,10 @@ wieder eingeschaltet werden soll.
   keine Vorab-Prüfung (Manuell übersteuert die Überlast-Vermeidung bewusst)
   – hier verlässt sich die Lösung vollständig auf den Überlastschutz der
   Steckdosen selbst.
-- Die "manuell eingeschaltet"-Erkennung basiert auf der Home-Assistant-
-  Heuristik "Zustandsänderung ohne automation-Kontext" und ist nicht zu
-  100 % robust (z. B. wenn ein Skript ohne eigenen Kontext schaltet).
+- Die "manuell eingeschaltet"-Erkennung basiert auf der Heuristik
+  "Zustandsänderung trägt eine Nutzer-ID im Kontext" und ist nicht zu
+  100 % robust (z. B. wird ein physischer Tastendruck direkt am Gerät
+  dadurch nicht als manuell erkannt).
 - Die Verifikation greift auch bei manuell gestarteten Ladungen (bewusst
   so, damit eine falsche Zuordnung immer auffällt) – meldet nach der
   Toleranzzeit weder OVMS noch der Ladestrom etwas, kommt dadurch auch bei
