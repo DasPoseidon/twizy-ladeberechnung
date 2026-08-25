@@ -342,7 +342,11 @@ direkter nutzbar.
 
 ### Selbstlernender Korrekturfaktor für die OVMS-Restzeitschätzung
 Die von OVMS geschätzte Restzeit bis voll ist die Grundlage der Ladeplanung
-(siehe oben), aber je nach Fahrzeug/Firmware oft ungenau. Der Lade-Scheduler
+(siehe oben), aber je nach Fahrzeug/Firmware oft ungenau. Manche OVMS-Setups
+liefern diesen Wert außerdem nicht als reine Zahl, sondern mit angehängtem
+Einheitssuffix (z. B. `"90m"` statt `"90"`) – der Lade-Scheduler extrahiert
+deshalb robust die erste Zahl aus dem Sensor-Zustand, statt eine reine
+Zahl vorauszusetzen. Der Lade-Scheduler
 gleicht das mit einem Korrekturfaktor aus
 (`twizy_{1,2}_ladezeit_korrekturfaktor`, Start 1,0): Die tatsächlich
 verwendete Ladedauer ist immer `OVMS-Schätzung × Korrekturfaktor`.

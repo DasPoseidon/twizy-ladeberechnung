@@ -459,6 +459,15 @@ action:
       current_power_sensor: "{{ innen_power_sensor if states(innen_socket_helper) == vehicle_id else aussen_power_sensor }}"
       current_socket_helper: "{{ innen_socket_helper if states(innen_socket_helper) == vehicle_id else aussen_socket_helper }}"
       other_socket_helper: "{{ aussen_socket_helper if states(innen_socket_helper) == vehicle_id else innen_socket_helper }}"
+      # OVMS liefert die Restzeit bis voll manche Setups nicht als reine
+      # Zahl, sondern mit angehängtem Einheitssuffix (z. B. "0m", "90m")
+      # - ein strikter float()-Parse würde dann lautlos auf einen Default
+      # zurückfallen. Deshalb wird stattdessen die erste Zahl aus dem
+      # Zustandstext extrahiert, unabhängig von einem evtl. angehängten
+      # Suffix; liefert der Zustand gar keine Zahl (z. B. "unknown"), ist
+      # ovms_etr_minutes "none".
+      ovms_etr_matches: "{{ states(etr_full_sensor) | regex_findall('[0-9]+(?:\\.[0-9]+)?') }}"
+      ovms_etr_minutes: "{{ (ovms_etr_matches[0] | float) if ovms_etr_matches else none }}"
 
   - if:
       - condition: template
@@ -552,7 +561,7 @@ action:
         target:
           entity_id: "{{ session_start_etr_helper }}"
         data:
-          value: "{{ ((states(etr_full_sensor) | float(0)) | round(0) | int) if states(etr_full_sensor) not in ['unknown', 'unavailable', 'none', ''] else 0 }}"
+          value: "{{ (ovms_etr_minutes | round(0) | int) if ovms_etr_minutes is not none else 0 }}"
       - service: input_boolean.turn_off
         target:
           entity_id: "{{ charging_finished_helper }}"
@@ -596,8 +605,7 @@ action:
     response_variable: tibber_price_response
 
   - variables:
-      ovms_etr_val: "{{ states(etr_full_sensor) }}"
-      duration_minutes: "{{ 120 if ovms_etr_val in ['unknown', 'unavailable', 'none', ''] else ((ovms_etr_val | float(120)) * (states(correction_factor_helper) | float(1.0))) }}"
+      duration_minutes: "{{ 120 if ovms_etr_minutes is none else (ovms_etr_minutes * (states(correction_factor_helper) | float(1.0))) }}"
       # Abfahrtszeit ist pro Wochentag einstellbar. Konvention: 00:00 Uhr an
       # einem Tag bedeutet "an diesem Tag kein Ladebedarf" (kein Auto-Fahren
       # geplant) - ohne dafür einen eigenen "aktiv"-Helper zu brauchen. Es
