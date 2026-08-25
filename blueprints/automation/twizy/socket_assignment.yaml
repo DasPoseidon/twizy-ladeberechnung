@@ -95,6 +95,25 @@ blueprint:
         entity:
           domain: input_boolean
 
+    twizy_1_alternative_getestet_helper:
+      name: Helper – Twizy 1 andere Steckdose bereits getestet
+      description: >
+        Wird bei jeder neuen Zuordnung dieses Fahrzeugs auf "aus" gesetzt,
+        damit der Lade-Scheduler bei fehlgeschlagener Verifikation die
+        andere Steckdose erneut testen darf (siehe Blueprint "Twizy:
+        Lade-Scheduler").
+      default: input_boolean.twizy_1_alternative_getestet
+      selector:
+        entity:
+          domain: input_boolean
+
+    twizy_2_alternative_getestet_helper:
+      name: Helper – Twizy 2 andere Steckdose bereits getestet
+      default: input_boolean.twizy_2_alternative_getestet
+      selector:
+        entity:
+          domain: input_boolean
+
 variables:
   twizy_1_location: !input twizy_1_location
   twizy_2_location: !input twizy_2_location
@@ -105,6 +124,8 @@ variables:
   aussen_socket_helper: !input aussen_socket_helper
   twizy_1_zuordnung_geprueft_helper: !input twizy_1_zuordnung_geprueft_helper
   twizy_2_zuordnung_geprueft_helper: !input twizy_2_zuordnung_geprueft_helper
+  twizy_1_alternative_getestet_helper: !input twizy_1_alternative_getestet_helper
+  twizy_2_alternative_getestet_helper: !input twizy_2_alternative_getestet_helper
 
 trigger:
   - platform: state
@@ -135,7 +156,9 @@ action:
         sequence:
           - service: input_boolean.turn_off
             target:
-              entity_id: !input twizy_1_zuordnung_geprueft_helper
+              entity_id:
+                - !input twizy_1_zuordnung_geprueft_helper
+                - !input twizy_1_alternative_getestet_helper
           - service: input_select.select_option
             target:
               entity_id: !input aussen_socket_helper
@@ -148,7 +171,9 @@ action:
             then:
               - service: input_boolean.turn_off
                 target:
-                  entity_id: !input twizy_2_zuordnung_geprueft_helper
+                  entity_id:
+                    - !input twizy_2_zuordnung_geprueft_helper
+                    - !input twizy_2_alternative_getestet_helper
               - service: input_select.select_option
                 target:
                   entity_id: !input innen_socket_helper
@@ -161,7 +186,9 @@ action:
         sequence:
           - service: input_boolean.turn_off
             target:
-              entity_id: !input twizy_2_zuordnung_geprueft_helper
+              entity_id:
+                - !input twizy_2_zuordnung_geprueft_helper
+                - !input twizy_2_alternative_getestet_helper
           - service: input_select.select_option
             target:
               entity_id: !input aussen_socket_helper
@@ -174,7 +201,9 @@ action:
             then:
               - service: input_boolean.turn_off
                 target:
-                  entity_id: !input twizy_1_zuordnung_geprueft_helper
+                  entity_id:
+                    - !input twizy_1_zuordnung_geprueft_helper
+                    - !input twizy_1_alternative_getestet_helper
               - service: input_select.select_option
                 target:
                   entity_id: !input innen_socket_helper
@@ -202,6 +231,8 @@ action:
               entity_id:
                 - !input twizy_1_zuordnung_geprueft_helper
                 - !input twizy_2_zuordnung_geprueft_helper
+                - !input twizy_1_alternative_getestet_helper
+                - !input twizy_2_alternative_getestet_helper
           - variables:
               current_innen: "{{ states(innen_socket_helper) }}"
               current_aussen: "{{ states(aussen_socket_helper) }}"

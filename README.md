@@ -226,6 +226,13 @@ Selbst ausprobieren: **Entwicklerwerkzeuge → Aktionen** → Aktion
   angenommen und die Zuordnung vertauscht.
 
 ### Verifikation zu Ladebeginn & Verbindungsprüfung
+**Nur wenn das Fahrzeug laut Standort-Entität zuhause ist:** Ist es nicht
+zuhause, schaltet der Lade-Scheduler automatisch weder ein noch aus, und es
+kommt auch keine Verifikations-Benachrichtigung – manuelles Einschalten
+bleibt davon unberührt (siehe [Manuelles Einschalten](#manuelles-einschalten)).
+Das verhindert sinnlose Einschaltversuche und Benachrichtigungen für ein
+Fahrzeug, das schlicht nicht da ist.
+
 Da kein zuverlässiger "Kabel gesteckt"-Sensor vorausgesetzt wird, erfolgt
 die Verifikation *nach* dem Einschalten, anhand des OVMS-Lade-/Fahrzustands:
 Meldet der Sensor des zugeordneten Fahrzeugs innerhalb der Toleranzzeit
@@ -233,19 +240,35 @@ Meldet der Sensor des zugeordneten Fahrzeugs innerhalb der Toleranzzeit
 konfigurierbar), gilt die aktuelle Zuordnung als bestätigt
 (`input_boolean.twizy_{1,2}_zuordnung_geprueft` → an – **ein eigener Helper
 je Fahrzeug**, nicht geteilt, sonst würde eine erfolgreiche Verifikation
-von Fahrzeug 1 fälschlich auch für Fahrzeug 2 gelten). Passiert das nicht,
-wird **nur eine Benachrichtigung ausgelöst** (dedupliziert über eine feste
-`notification_id`, kein Spam bei wiederholten Versuchen) – mit Hinweis auf
-die beiden möglichen Ursachen: falsche Zuordnung *oder* Fahrzeug nicht
-angeschlossen. Die Steckdose wird bewusst **nicht** automatisch
+von Fahrzeug 1 fälschlich auch für Fahrzeug 2 gelten). Dieser Helfer wird
+bei **jedem** Einschalten zurückgesetzt (manuell oder automatisch) – eine
+frühere erfolgreiche Verifikation gilt also nie für eine neue Ladesitzung
+weiter, falls inzwischen z. B. ein anderes Fahrzeug an derselben Steckdose
+hängt.
+
+Passiert das nicht: Steht die jeweils andere Steckdose gerade frei (kein
+Eingriff in eine laufende Ladung des anderen Fahrzeugs) und wurde das für
+diese Ankunft noch nicht versucht, schaltet der Lade-Scheduler testweise
+dorthin um – vielleicht ist die Zuordnung einfach vertauscht. Bestätigt
+sich dort ein "lädt aktiv"-Zustand, bleibt die angepasste Zuordnung
+bestehen; falls nicht, bleibt es bei dieser einen Alternative (kein
+Hin-und-her zwischen den Steckdosen) und es wird nur noch benachrichtigt.
+Bei manuellem Einschalten wird nicht automatisch umgeschaltet – dafür gibt
+es die [Steckdose pausieren](#steckdose-pausieren-z-b-f%C3%BCr-rasenm%C3%A4her)-Funktion.
+In beiden Fällen (kein Alternativ-Versuch möglich, oder auch die Alternative
+ohne Erfolg) wird **nur eine Benachrichtigung ausgelöst** (dedupliziert über
+eine feste `notification_id`, kein Spam bei wiederholten Versuchen) – mit
+Hinweis auf die möglichen Ursachen: falsche Zuordnung *oder* Fahrzeug nicht
+angeschlossen. Die Steckdose wird dabei bewusst **nicht** automatisch
 abgeschaltet: Ohne echten Kabel-Sensor lässt sich "nicht angeschlossen"
 nicht zuverlässig von "falsche Zuordnung" unterscheiden, und ein
 Abschalten+Neuversuch bei jedem Prüfzyklus würde die Steckdose fürs
 restliche Ladefenster dauerhaft an-/ausklicken. Stattdessen bleibt sie
 einfach an, bis die normale Preis-/Deadline-Logik sie regulär abschaltet.
-`socket_assignment.yaml` setzt den jeweiligen Verifikations-Helper bei
-jeder neuen Zuordnung (Ankunft oder Platztausch) zurück, damit auch ein
-Steckdosenwechsel erneut geprüft wird.
+`socket_assignment.yaml` setzt den jeweiligen Verifikations-Helper (und den
+"andere Steckdose bereits getestet"-Helfer) bei jeder neuen Zuordnung
+(Ankunft oder Platztausch) zurück, damit auch ein Steckdosenwechsel wieder
+frisch geprüft und ggf. erneut ein Alternativ-Versuch erlaubt wird.
 
 Damit "zuhause + Ladebedarf, aber nicht angeschlossen" nicht erst kurz vor
 einer knappen Deadline auffällt (wo die Aufhol-Logik ohnehin einen
@@ -455,12 +478,16 @@ wieder eingeschaltet werden soll.
   selbst wenn das gewünscht gewesen wäre. Bei Bedarf `verification_grace_period`
   großzügiger einstellen oder die Bedingung im Blueprint anpassen.
 - Die Verifikation (und die Verbindungsprüfung nach Ankunft) kann ohne
-  echten Kabel-Sensor nicht zwischen "nicht angeschlossen" und "falsche
-  Zuordnung" unterscheiden – die Benachrichtigung nennt beide als mögliche
-  Ursache und die Steckdose bleibt in beiden Fällen einfach an (siehe
-  [Verifikation & Verbindungsprüfung](#verifikation-zu-ladebeginn--verbindungspr%C3%BCfung)).
-  Steckt tatsächlich das falsche Fahrzeug an der Steckdose, lädt es also
-  ggf. weiter, bis die Zuordnung manuell korrigiert wird.
+  echten Kabel-Sensor nicht zuverlässig zwischen "nicht angeschlossen" und
+  "falsche Zuordnung" unterscheiden. Der automatische Alternativ-Versuch an
+  der jeweils anderen Steckdose (siehe
+  [Verifikation & Verbindungsprüfung](#verifikation-zu-ladebeginn--verbindungspr%C3%BCfung))
+  klärt eine schlicht vertauschte Zuordnung von selbst auf, hilft aber
+  nicht, wenn das Fahrzeug wirklich an keiner der beiden Steckdosen hängt
+  oder ein drittes, unbekanntes Gerät angeschlossen ist – die
+  Benachrichtigung nennt dann weiterhin beide Ursachen als möglich, und die
+  Steckdose bleibt einfach an, bis sie manuell korrigiert oder das
+  Ladefenster regulär beendet wird.
 
 ## Repository-Struktur
 

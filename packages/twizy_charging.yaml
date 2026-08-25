@@ -71,6 +71,18 @@ input_boolean:
     name: "Twizy 2 – aktuelle Steckdosenzuordnung verifiziert"
     icon: mdi:check-decagram
 
+  # Merkt sich, ob bei fehlgeschlagener Verifikation bereits testweise die
+  # jeweils andere Steckdose probiert wurde (verhindert wiederholtes
+  # Hin-und-her-Testen) - wird bei jeder neuen Zuordnung (Ankunft oder
+  # Platztausch) in socket_assignment.yaml zurückgesetzt.
+  twizy_1_alternative_getestet:
+    name: "Twizy 1 – andere Steckdose bereits getestet (intern)"
+    icon: mdi:swap-horizontal
+
+  twizy_2_alternative_getestet:
+    name: "Twizy 2 – andere Steckdose bereits getestet (intern)"
+    icon: mdi:swap-horizontal
+
   twizy_1_verbindungspruefung_aktiv:
     name: "Twizy 1 – Verbindungsprüfung nach Ankunft aktiv"
     icon: mdi:power-plug-outline

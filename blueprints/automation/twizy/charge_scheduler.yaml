@@ -7,7 +7,11 @@ blueprint:
 
     Ablauf pro Prüfzyklus:
     1. Ermittelt anhand der Steckdosen-Zuordnungs-Helper, ob dieses Fahrzeug
-       aktuell an "innen" oder "außen" hängt.
+       aktuell an "innen" oder "außen" hängt. Ist das Fahrzeug laut
+       Standort-Entität nicht zuhause, greift ab hier nur noch manuelles
+       Einschalten – automatisch (Preis/Aufhol-Logik/Verbindungsprüfung/
+       Mindestlaufzeit) wird weder ein- noch ausgeschaltet, und es kommt
+       auch keine Verifikations-Benachrichtigung.
     2. Ermittelt die benötigte Ladedauer aus der vom OVMS geschätzten
        Restzeit bis voll, multipliziert mit einem selbstlernenden
        Korrekturfaktor (aus dem Verhältnis tatsächlicher zu geschätzter
@@ -44,8 +48,12 @@ blueprint:
     7. Nach dem Einschalten wird anhand des OVMS-Lade-/Fahrzustands-Sensors
        geprüft, ob das Fahrzeug tatsächlich zu laden beginnt. Meldet der
        Sensor innerhalb der Toleranzzeit keinen "lädt"-Zustand (falsche
-       Zuordnung oder Fahrzeug nicht angeschlossen), wird nur eine
-       Benachrichtigung ausgelöst - die Steckdose bleibt an, damit sie
+       Zuordnung oder Fahrzeug nicht angeschlossen): Steht die jeweils
+       andere Steckdose gerade frei und wurde das für diese Ankunft noch
+       nicht versucht, wird testweise dort weitergemacht und die Zuordnung
+       bei Erfolg entsprechend angepasst (genau ein Versuch, kein
+       Hin-und-her). Ansonsten (oder bei manuellem Einschalten) wird nur
+       eine Benachrichtigung ausgelöst - die Steckdose bleibt an, damit sie
        nicht bei jedem Prüfzyklus fürs restliche Ladefenster an-/
        ausgeklickt wird. Ein eigener "Kabel gesteckt"-Sensor wird bewusst
        nicht vorausgesetzt, da viele OVMS-Setups keinen solchen Sensor
@@ -80,7 +88,7 @@ blueprint:
     Der Korrekturfaktor für die OVMS-Restzeitschätzung wird nach jeder
     Ladung, bei der der Akku mindestens die Korrektur-SoC-Schwelle (Default
     95 %) erreicht hat, per gleitendem Mittelwert angepasst (70 % alter
-    Wert, 30 % neu gemessenes Verhältnis) und auf 0,3–3,0 begrenzt.
+    Wert, 30 % neu gemessenes Verhältnis) und auf 0,3–6,0 begrenzt.
   domain: automation
   source_url: https://github.com/DasPoseidon/twizy-ladeberechnung/blob/main/blueprints/automation/twizy/charge_scheduler.yaml
   input:
@@ -345,6 +353,7 @@ variables:
   ladeplan_helper: "{{ 'input_text.' ~ vehicle_id ~ '_ladeplan_offsets' }}"
   next_start_helper: "{{ 'input_text.' ~ vehicle_id ~ '_naechster_ladestart' }}"
   socket_zuordnung_geprueft_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_zuordnung_geprueft' }}"
+  alternative_tested_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_alternative_getestet' }}"
   connectivity_probe_enabled_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_verbindungspruefung_aktiv' }}"
   min_on_minutes_helper: "{{ 'input_number.' ~ vehicle_id ~ '_mindestlaufzeit_minuten' }}"
   on_time_today_minutes_helper: "{{ 'input_number.' ~ vehicle_id ~ '_einschaltzeit_minuten_heute' }}"
@@ -445,6 +454,8 @@ action:
       other_switch: "{{ aussen_switch if states(innen_socket_helper) == vehicle_id else (innen_switch if states(aussen_socket_helper) == vehicle_id else none) }}"
       other_power_sensor: "{{ aussen_power_sensor if states(innen_socket_helper) == vehicle_id else innen_power_sensor }}"
       current_power_sensor: "{{ innen_power_sensor if states(innen_socket_helper) == vehicle_id else aussen_power_sensor }}"
+      current_socket_helper: "{{ innen_socket_helper if states(innen_socket_helper) == vehicle_id else aussen_socket_helper }}"
+      other_socket_helper: "{{ aussen_socket_helper if states(innen_socket_helper) == vehicle_id else innen_socket_helper }}"
 
   - if:
       - condition: template
@@ -522,8 +533,12 @@ action:
   # OVMS-Restzeitschätzung bei Ladestart merken (Basis für den
   # Ladezeit-Korrekturfaktor oben) - unabhängig davon, ob manuell oder
   # automatisch eingeschaltet wurde. Außerdem: neue Ladesitzung beginnt,
-  # also die Ladeschluss-Bestätigung der vorherigen Sitzung zurücksetzen
-  # (siehe charging_finished_helper unten).
+  # also die Ladeschluss-Bestätigung UND die Zuordnungs-Verifikation der
+  # vorherigen Sitzung zurücksetzen (siehe charging_finished_helper und
+  # socket_zuordnung_geprueft_helper unten) - wichtig gerade beim manuellen
+  # Einschalten, das sonst fälschlich noch als "verifiziert" von einer
+  # früheren Sitzung gelten könnte, obwohl diesmal ggf. ein anderes
+  # Fahrzeug angeschlossen ist.
   - if:
       - condition: trigger
         id: switch_on
@@ -538,6 +553,9 @@ action:
       - service: input_boolean.turn_off
         target:
           entity_id: "{{ charging_finished_helper }}"
+      - service: input_boolean.turn_off
+        target:
+          entity_id: "{{ socket_zuordnung_geprueft_helper }}"
 
   # Ladeschluss-Erkennung: Ladestrom der eigenen Steckdose ist durchgehend
   # unter der Schwelle geblieben (siehe charging_finished-Trigger oben) -
@@ -719,9 +737,14 @@ action:
       # ohne gesetzte Abfahrtszeit soll trotzdem zu den günstigsten bereits
       # bekannten Zeitfenstern geladen werden (nur die Aufhol-Logik
       # must_charge_now braucht eine echte Deadline, um sinnvoll zu sein).
+      # is_home gattert die automatischen Gründe (Preis/Aufhol-Logik/
+      # Verbindungsprüfung/Mindestlaufzeit) - ist das Fahrzeug nicht
+      # zuhause, wird nicht automatisch eingeschaltet (und eine laufende
+      # Ladung wird beendet). Manuelles Einschalten bleibt davon bewusst
+      # unberührt, wie auch sonst überall in diesem Blueprint.
       should_charge_now: >-
-        {{ (not is_full and (is_manual or should_charge_price or (has_real_deadline and must_charge_now) or connectivity_probe_needed)) or
-           (is_full and maintenance_slot_now) }}
+        {{ (not is_full and (is_manual or (is_home and (should_charge_price or (has_real_deadline and must_charge_now) or connectivity_probe_needed)))) or
+           (is_full and is_home and maintenance_slot_now) }}
       # Lesbare Anzeige "wann ist der nächste Ladestart" (siehe
       # next_start_helper unten): laufende Ladung -> "jetzt", sonst der
       # früheste geplante Slot aus dem jeweils zutreffenden Plan.
@@ -741,7 +764,7 @@ action:
       seconds_since_switch_on: "{{ (now() - states[current_switch].last_changed).total_seconds() if is_state(current_switch, 'on') else 0 }}"
       verification_grace_seconds: "{{ timedelta(**verification_grace_period).total_seconds() }}"
       verification_failed: >-
-        {{ is_state(current_switch, 'on') and not is_charging_now and
+        {{ is_home and is_state(current_switch, 'on') and not is_charging_now and
            not is_state(socket_zuordnung_geprueft_helper, 'on') and
            seconds_since_switch_on >= verification_grace_seconds }}
 
@@ -835,6 +858,9 @@ action:
           - service: input_boolean.turn_on
             target:
               entity_id: "{{ socket_zuordnung_geprueft_helper }}"
+          - service: input_boolean.turn_off
+            target:
+              entity_id: "{{ alternative_tested_helper }}"
           - service: persistent_notification.dismiss
             data:
               notification_id: "twizy_{{ vehicle_id }}_zuordnung_warnung"
@@ -847,25 +873,78 @@ action:
         # würde die Steckdose fürs restliche Ladefenster dauerhaft an-/
         # ausklicken. Stattdessen bleibt die Steckdose einfach an (die
         # normale should_charge_now-Logik schaltet sie regulär ab, sobald
-        # das Preisfenster/die Deadline das vorsieht) und es wird nur
-        # einmalig benachrichtigt.
+        # das Preisfenster/die Deadline das vorsieht). Zusätzlich: steht
+        # die andere Steckdose gerade frei (kein Eingriff in eine laufende
+        # Ladung des anderen Fahrzeugs) und wurde das noch nicht versucht,
+        # wird testweise dort weitergemacht, falls die Zuordnung schlicht
+        # vertauscht ist - genau EIN Versuch pro Ankunfts-Episode
+        # (alternative_tested_helper, wird bei jeder neuen Zuordnung in
+        # socket_assignment.yaml zurückgesetzt), sonst nur benachrichtigt.
+        # Bewusst nicht bei manuellem Einschalten (is_manual) - dafür gibt
+        # es die "Steckdose pausieren"-Funktion.
         sequence:
-          - service: persistent_notification.create
-            data:
-              notification_id: "twizy_{{ vehicle_id }}_zuordnung_warnung"
-              title: "Twizy Ladesteuerung: Laden prüfen"
-              message: >
-                {{ vehicle_id }} sollte laut Zuordnung an der Steckdose
-                {{ 'innen' if current_switch == innen_switch else 'außen' }}
-                laden, meldet laut OVMS-Lade-/Fahrzustand aber seit
-                {{ (verification_grace_seconds / 60) | round(0) | int }}
-                Minuten keinen "lädt aktiv"-Zustand. Mögliche Ursachen:
-                Fahrzeug ist nicht angeschlossen, oder die
-                input_select-Zuordnung stimmt nicht. Die Steckdose bleibt
-                vorerst eingeschaltet (kein automatisches Abschalten mehr
-                bei fehlgeschlagener Verifikation, um wiederholtes An-/
-                Ausklicken übers Ladefenster zu vermeiden) - bitte
-                manuell prüfen, ob das richtige Fahrzeug angeschlossen ist.
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >-
+                      {{ not is_manual and not is_state(alternative_tested_helper, 'on') and
+                         is_state(other_switch, 'off') }}
+                sequence:
+                  - service: input_boolean.turn_on
+                    target:
+                      entity_id: "{{ alternative_tested_helper }}"
+                  - service: switch.turn_off
+                    target:
+                      entity_id: "{{ current_switch }}"
+                  - service: input_select.select_option
+                    target:
+                      entity_id: "{{ current_socket_helper }}"
+                    data:
+                      option: "unbekannt"
+                  - service: input_select.select_option
+                    target:
+                      entity_id: "{{ other_socket_helper }}"
+                    data:
+                      option: "{{ vehicle_id }}"
+                  - service: input_boolean.turn_off
+                    target:
+                      entity_id: "{{ socket_zuordnung_geprueft_helper }}"
+                  - service: switch.turn_on
+                    target:
+                      entity_id: "{{ other_switch }}"
+                  - service: persistent_notification.create
+                    data:
+                      notification_id: "twizy_{{ vehicle_id }}_zuordnung_warnung"
+                      title: "Twizy Ladesteuerung: andere Steckdose wird getestet"
+                      message: >
+                        {{ vehicle_id }} lädt nicht wie erwartet an der
+                        bisher zugeordneten Steckdose. Da die andere
+                        Steckdose gerade frei ist, wird testweise dort
+                        weitergemacht - die Zuordnung wurde vorläufig
+                        angepasst. Bestätigt sich dort ein "lädt
+                        aktiv"-Zustand, bleibt es dabei; falls nicht,
+                        bitte die Zuordnung manuell prüfen.
+            default:
+              - service: persistent_notification.create
+                data:
+                  notification_id: "twizy_{{ vehicle_id }}_zuordnung_warnung"
+                  title: "Twizy Ladesteuerung: Laden prüfen"
+                  message: >
+                    {{ vehicle_id }} sollte laut Zuordnung an der Steckdose
+                    {{ 'innen' if current_switch == innen_switch else 'außen' }}
+                    laden, meldet laut OVMS-Lade-/Fahrzustand aber seit
+                    {{ (verification_grace_seconds / 60) | round(0) | int }}
+                    Minuten keinen "lädt aktiv"-Zustand. Mögliche Ursachen:
+                    Fahrzeug ist nicht angeschlossen, oder die
+                    input_select-Zuordnung stimmt nicht{{ ' (die andere
+                    Steckdose wurde bereits testweise probiert, ohne
+                    Erfolg)' if is_state(alternative_tested_helper, 'on')
+                    else '' }}. Die Steckdose bleibt vorerst eingeschaltet
+                    (kein automatisches Abschalten mehr bei
+                    fehlgeschlagener Verifikation, um wiederholtes An-/
+                    Ausklicken übers Ladefenster zu vermeiden) - bitte
+                    manuell prüfen, ob das richtige Fahrzeug angeschlossen
+                    ist.
 
 mode: single
 max_exceeded: silent
