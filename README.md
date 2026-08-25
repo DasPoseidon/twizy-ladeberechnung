@@ -227,11 +227,15 @@ Selbst ausprobieren: **Entwicklerwerkzeuge → Aktionen** → Aktion
 
 ### Verifikation zu Ladebeginn & Verbindungsprüfung
 **Nur wenn das Fahrzeug laut Standort-Entität zuhause ist:** Ist es nicht
-zuhause, schaltet der Lade-Scheduler automatisch weder ein noch aus, und es
-kommt auch keine Verifikations-Benachrichtigung – manuelles Einschalten
-bleibt davon unberührt (siehe [Manuelles Einschalten](#manuelles-einschalten)).
-Das verhindert sinnlose Einschaltversuche und Benachrichtigungen für ein
-Fahrzeug, das schlicht nicht da ist.
+zuhause, bleibt die Steckdose aus bzw. wird abgeschaltet, falls sie gerade
+an ist – auch bei einer manuell gestarteten Ladung, denn fährt das
+Fahrzeug weg, gibt es nichts mehr zu laden (siehe
+[Manuelles Einschalten](#manuelles-einschalten)). Es kommt dabei auch
+keine Verifikations-Benachrichtigung. Das verhindert sinnlose
+Einschaltversuche und Benachrichtigungen für ein Fahrzeug, das schlicht
+nicht da ist. Ausgenommen ist nur die eigenständige
+[Steckdose pausieren](#steckdose-pausieren-z-b-f%C3%BCr-rasenm%C3%A4her)-Funktion,
+die unabhängig vom Fahrzeugstandort funktioniert.
 
 Da kein zuverlässiger "Kabel gesteckt"-Sensor vorausgesetzt wird, erfolgt
 die Verifikation *nach* dem Einschalten, anhand des OVMS-Lade-/Fahrzustands:
@@ -413,7 +417,13 @@ hundertprozentig fälschungssichere Heuristik), wird das als manueller
 Ladewunsch übernommen: Es wird sofort weitergeladen, die Abfahrtszeit bleibt
 aber als spätester "voll"-Zeitpunkt gültig – die Automatisierung schaltet
 weiterhin ab, sobald der SoC-Schwellwert erreicht ist (siehe
-[Ladeschluss-Erkennung](#ladeschluss-erkennung)).
+[Ladeschluss-Erkennung](#ladeschluss-erkennung)) **oder das Fahrzeug
+wegfährt** (anders als bei der Preis-/Überlast-Logik übersteuert "manuell"
+den Standort-Check bewusst nicht – fährt das Fahrzeug weg, gibt es nichts
+mehr zu laden, egal wie die Ladung gestartet wurde). Für die bewusste
+Nutzung einer Steckdose durch ein anderes Gerät, unabhängig vom
+Fahrzeugstandort, gibt es stattdessen die separate
+[Steckdose pausieren](#steckdose-pausieren-z-b-f%C3%BCr-rasenm%C3%A4her)-Funktion.
 
 ### Steckdose pausieren (z. B. für Rasenmäher)
 Über `input_boolean.twizy_socket_aussen_pause` lässt sich die Steckdose

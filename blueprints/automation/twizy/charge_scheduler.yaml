@@ -8,10 +8,12 @@ blueprint:
     Ablauf pro Prüfzyklus:
     1. Ermittelt anhand der Steckdosen-Zuordnungs-Helper, ob dieses Fahrzeug
        aktuell an "innen" oder "außen" hängt. Ist das Fahrzeug laut
-       Standort-Entität nicht zuhause, greift ab hier nur noch manuelles
-       Einschalten – automatisch (Preis/Aufhol-Logik/Verbindungsprüfung/
-       Mindestlaufzeit) wird weder ein- noch ausgeschaltet, und es kommt
-       auch keine Verifikations-Benachrichtigung.
+       Standort-Entität nicht zuhause, bleibt die Steckdose grundsätzlich
+       aus bzw. wird abgeschaltet, falls sie gerade an ist (auch bei
+       manuell gestarteter Ladung – fährt das Fahrzeug weg, gibt es nichts
+       mehr zu laden) und es kommt keine Verifikations-Benachrichtigung.
+       Ausgenommen ist nur die eigenständige "Steckdose
+       pausieren"-Funktion für die Nutzung durch ein anderes Gerät.
     2. Ermittelt die benötigte Ladedauer aus der vom OVMS geschätzten
        Restzeit bis voll, multipliziert mit einem selbstlernenden
        Korrekturfaktor (aus dem Verhältnis tatsächlicher zu geschätzter
@@ -44,7 +46,8 @@ blueprint:
        Ladewunsch erkannt (Heuristik: Zustandsänderung ohne automation-
        Kontext) und die Preisoptimierung übersteuert – die Abfahrtszeit als
        spätester Voll-Zeitpunkt bleibt aber weiter gültig (die Automatisierung
-       schaltet trotzdem ab, sobald das Fahrzeug voll ist).
+       schaltet trotzdem ab, sobald das Fahrzeug voll ist oder es wegfährt,
+       siehe Punkt 1).
     7. Nach dem Einschalten wird anhand des OVMS-Lade-/Fahrzustands-Sensors
        geprüft, ob das Fahrzeug tatsächlich zu laden beginnt. Meldet der
        Sensor innerhalb der Toleranzzeit keinen "lädt"-Zustand (falsche
@@ -737,14 +740,17 @@ action:
       # ohne gesetzte Abfahrtszeit soll trotzdem zu den günstigsten bereits
       # bekannten Zeitfenstern geladen werden (nur die Aufhol-Logik
       # must_charge_now braucht eine echte Deadline, um sinnvoll zu sein).
-      # is_home gattert die automatischen Gründe (Preis/Aufhol-Logik/
-      # Verbindungsprüfung/Mindestlaufzeit) - ist das Fahrzeug nicht
-      # zuhause, wird nicht automatisch eingeschaltet (und eine laufende
-      # Ladung wird beendet). Manuelles Einschalten bleibt davon bewusst
-      # unberührt, wie auch sonst überall in diesem Blueprint.
+      # is_home gattert alles hier, auch manuelles Laden (anders als sonst
+      # in diesem Blueprint, wo manuell immer übersteuert): Fährt das
+      # Fahrzeug weg, gibt es nichts mehr zu laden, egal wie die Ladung
+      # gestartet wurde - die Steckdose wird dann abgeschaltet. Für die
+      # bewusste Nutzung der Steckdose durch ein anderes Gerät (unabhängig
+      # vom Standort des Fahrzeugs) gibt es stattdessen die separate
+      # "Steckdose pausieren"-Funktion (eigener stop-Guard weiter oben,
+      # von should_charge_now komplett unabhängig).
       should_charge_now: >-
-        {{ (not is_full and (is_manual or (is_home and (should_charge_price or (has_real_deadline and must_charge_now) or connectivity_probe_needed)))) or
-           (is_full and is_home and maintenance_slot_now) }}
+        {{ is_home and ((not is_full and (is_manual or should_charge_price or (has_real_deadline and must_charge_now) or connectivity_probe_needed)) or
+           (is_full and maintenance_slot_now)) }}
       # Lesbare Anzeige "wann ist der nächste Ladestart" (siehe
       # next_start_helper unten): laufende Ladung -> "jetzt", sonst der
       # früheste geplante Slot aus dem jeweils zutreffenden Plan.
