@@ -48,19 +48,20 @@ blueprint:
        spätester Voll-Zeitpunkt bleibt aber weiter gültig (die Automatisierung
        schaltet trotzdem ab, sobald das Fahrzeug voll ist oder es wegfährt,
        siehe Punkt 1).
-    7. Nach dem Einschalten wird anhand des OVMS-Lade-/Fahrzustands-Sensors
-       geprüft, ob das Fahrzeug tatsächlich zu laden beginnt. Meldet der
-       Sensor innerhalb der Toleranzzeit keinen "lädt"-Zustand (falsche
-       Zuordnung oder Fahrzeug nicht angeschlossen): Steht die jeweils
-       andere Steckdose gerade frei und wurde das für diese Ankunft noch
-       nicht versucht, wird testweise dort weitergemacht und die Zuordnung
-       bei Erfolg entsprechend angepasst (genau ein Versuch, kein
-       Hin-und-her). Ansonsten (oder bei manuellem Einschalten) wird nur
-       eine Benachrichtigung ausgelöst - die Steckdose bleibt an, damit sie
-       nicht bei jedem Prüfzyklus fürs restliche Ladefenster an-/
-       ausgeklickt wird. Ein eigener "Kabel gesteckt"-Sensor wird bewusst
-       nicht vorausgesetzt, da viele OVMS-Setups keinen solchen Sensor
-       bereitstellen.
+    7. Nach dem Einschalten wird geprüft, ob das Fahrzeug tatsächlich zu
+       laden beginnt - anhand des OVMS-Lade-/Fahrzustands-Sensors ODER
+       eines messbaren Ladestroms an der zugeordneten Steckdose (über der
+       Ladeschluss-Schwelle). Bestätigt sich innerhalb der Toleranzzeit
+       keins von beidem (falsche Zuordnung oder Fahrzeug nicht
+       angeschlossen): Steht die jeweils andere Steckdose gerade frei und
+       wurde das für diese Ankunft noch nicht versucht, wird testweise dort
+       weitergemacht und die Zuordnung bei Erfolg entsprechend angepasst
+       (genau ein Versuch, kein Hin-und-her). Ansonsten (oder bei manuellem
+       Einschalten) wird nur eine Benachrichtigung ausgelöst - die
+       Steckdose bleibt an, damit sie nicht bei jedem Prüfzyklus fürs
+       restliche Ladefenster an-/ausgeklickt wird. Ein eigener "Kabel
+       gesteckt"-Sensor wird bewusst nicht vorausgesetzt, da viele
+       OVMS-Setups keinen solchen Sensor bereitstellen.
     8. Das gemeinsame Stromkreis-Limit wird NICHT aktiv überwacht (die
        Steckdosen haben eigenen Überlastschutz: bei Überlast wird die
        jeweilige Steckdose selbstständig `unavailable` und später wieder im
@@ -771,13 +772,19 @@ action:
             if next_charge_start_epoch_slot is not none else 'Kein Ladebedarf geplant') }}
       # Verifikation "erwartetes Fahrzeug lädt tatsächlich" über den
       # OVMS-Lade-/Fahrzustand statt eines (oft nicht vorhandenen)
-      # Kabel-gesteckt-Sensors.
+      # Kabel-gesteckt-Sensors - zusätzlich abgesichert über den gemessenen
+      # Ladestrom der eigenen Steckdose: Wird spürbar Strom gezogen (über
+      # der Ladeschluss-Schwelle, siehe charge_complete_power_threshold),
+      # hängt dort etwas und lädt, unabhängig davon, ob der OVMS-Sensor das
+      # (rechtzeitig) meldet.
       charging_values_list: "{{ charging_state_values.split(',') | map('trim') | map('lower') | list }}"
       is_charging_now: "{{ (states(charge_state_sensor) | lower | trim) in charging_values_list }}"
+      is_drawing_power: "{{ (states(current_power_sensor) | float(0)) > charge_complete_power_threshold }}"
+      verified_charging: "{{ is_charging_now or is_drawing_power }}"
       seconds_since_switch_on: "{{ (now() - states[current_switch].last_changed).total_seconds() if is_state(current_switch, 'on') else 0 }}"
       verification_grace_seconds: "{{ timedelta(**verification_grace_period).total_seconds() }}"
       verification_failed: >-
-        {{ is_home and is_state(current_switch, 'on') and not is_charging_now and
+        {{ is_home and is_state(current_switch, 'on') and not verified_charging and
            not is_state(socket_zuordnung_geprueft_helper, 'on') and
            seconds_since_switch_on >= verification_grace_seconds }}
 
@@ -866,7 +873,7 @@ action:
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ is_state(current_switch, 'on') and is_charging_now }}"
+            value_template: "{{ is_state(current_switch, 'on') and verified_charging }}"
         sequence:
           - service: input_boolean.turn_on
             target:
@@ -935,8 +942,9 @@ action:
                         Steckdose gerade frei ist, wird testweise dort
                         weitergemacht - die Zuordnung wurde vorläufig
                         angepasst. Bestätigt sich dort ein "lädt
-                        aktiv"-Zustand, bleibt es dabei; falls nicht,
-                        bitte die Zuordnung manuell prüfen.
+                        aktiv"-Zustand oder ein messbarer Ladestrom, bleibt
+                        es dabei; falls nicht, bitte die Zuordnung manuell
+                        prüfen.
             default:
               - service: persistent_notification.create
                 data:
@@ -945,9 +953,11 @@ action:
                   message: >
                     {{ vehicle_id }} sollte laut Zuordnung an der Steckdose
                     {{ 'innen' if current_switch == innen_switch else 'außen' }}
-                    laden, meldet laut OVMS-Lade-/Fahrzustand aber seit
+                    laden, meldet aber seit
                     {{ (verification_grace_seconds / 60) | round(0) | int }}
-                    Minuten keinen "lädt aktiv"-Zustand. Mögliche Ursachen:
+                    Minuten weder laut OVMS-Lade-/Fahrzustand einen "lädt
+                    aktiv"-Zustand noch einen messbaren Ladestrom. Mögliche
+                    Ursachen:
                     Fahrzeug ist nicht angeschlossen, oder die
                     input_select-Zuordnung stimmt nicht{{ ' (die andere
                     Steckdose wurde bereits testweise probiert, ohne

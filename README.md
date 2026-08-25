@@ -238,10 +238,14 @@ nicht da ist. Ausgenommen ist nur die eigenständige
 die unabhängig vom Fahrzeugstandort funktioniert.
 
 Da kein zuverlässiger "Kabel gesteckt"-Sensor vorausgesetzt wird, erfolgt
-die Verifikation *nach* dem Einschalten, anhand des OVMS-Lade-/Fahrzustands:
-Meldet der Sensor des zugeordneten Fahrzeugs innerhalb der Toleranzzeit
+die Verifikation *nach* dem Einschalten, anhand von zwei unabhängigen
+Signalen: dem OVMS-Lade-/Fahrzustand ODER einem messbaren Ladestrom an der
+zugeordneten Steckdose (über der Ladeschluss-Schwelle
+`charge_complete_power_threshold`, Default 10 W). Meldet der
+OVMS-Zustandssensor des zugeordneten Fahrzeugs innerhalb der Toleranzzeit
 (Default 15 min) einen "lädt aktiv"-Wert (Default nur `charging`,
-konfigurierbar), gilt die aktuelle Zuordnung als bestätigt
+konfigurierbar) **oder** wird spürbar Strom gezogen, gilt die aktuelle
+Zuordnung als bestätigt
 (`input_boolean.twizy_{1,2}_zuordnung_geprueft` → an – **ein eigener Helper
 je Fahrzeug**, nicht geteilt, sonst würde eine erfolgreiche Verifikation
 von Fahrzeug 1 fälschlich auch für Fahrzeug 2 gelten). Dieser Helfer wird
@@ -250,12 +254,13 @@ frühere erfolgreiche Verifikation gilt also nie für eine neue Ladesitzung
 weiter, falls inzwischen z. B. ein anderes Fahrzeug an derselben Steckdose
 hängt.
 
-Passiert das nicht: Steht die jeweils andere Steckdose gerade frei (kein
-Eingriff in eine laufende Ladung des anderen Fahrzeugs) und wurde das für
-diese Ankunft noch nicht versucht, schaltet der Lade-Scheduler testweise
-dorthin um – vielleicht ist die Zuordnung einfach vertauscht. Bestätigt
-sich dort ein "lädt aktiv"-Zustand, bleibt die angepasste Zuordnung
-bestehen; falls nicht, bleibt es bei dieser einen Alternative (kein
+Passiert das nicht (weder OVMS-Zustand noch Ladestrom bestätigen etwas):
+Steht die jeweils andere Steckdose gerade frei (kein Eingriff in eine
+laufende Ladung des anderen Fahrzeugs) und wurde das für diese Ankunft noch
+nicht versucht, schaltet der Lade-Scheduler testweise dorthin um –
+vielleicht ist die Zuordnung einfach vertauscht. Bestätigt sich dort eines
+der beiden Signale, bleibt die angepasste Zuordnung bestehen; falls nicht,
+bleibt es bei dieser einen Alternative (kein
 Hin-und-her zwischen den Steckdosen) und es wird nur noch benachrichtigt.
 Bei manuellem Einschalten wird nicht automatisch umgeschaltet – dafür gibt
 es die [Steckdose pausieren](#steckdose-pausieren-z-b-f%C3%BCr-rasenm%C3%A4her)-Funktion.
@@ -484,12 +489,11 @@ wieder eingeschaltet werden soll.
 - Die "manuell eingeschaltet"-Erkennung basiert auf der Home-Assistant-
   Heuristik "Zustandsänderung ohne automation-Kontext" und ist nicht zu
   100 % robust (z. B. wenn ein Skript ohne eigenen Kontext schaltet).
-- Die Verifikation über den Lade-/Fahrzustand greift auch bei manuell
-  gestarteten Ladungen (bewusst so, damit eine falsche Zuordnung immer
-  auffällt) – dadurch schaltet sich eine manuell eingeschaltete Steckdose
-  nach der Toleranzzeit wieder ab, wenn OVMS kein "lädt aktiv" meldet,
-  selbst wenn das gewünscht gewesen wäre. Bei Bedarf `verification_grace_period`
-  großzügiger einstellen oder die Bedingung im Blueprint anpassen.
+- Die Verifikation greift auch bei manuell gestarteten Ladungen (bewusst
+  so, damit eine falsche Zuordnung immer auffällt) – meldet nach der
+  Toleranzzeit weder OVMS noch der Ladestrom etwas, kommt dadurch auch bei
+  einer manuell eingeschalteten Steckdose die Verifikations-Benachrichtigung
+  (die Steckdose bleibt aber an, siehe oben).
 - Die Verifikation (und die Verbindungsprüfung nach Ankunft) kann ohne
   echten Kabel-Sensor nicht zuverlässig zwischen "nicht angeschlossen" und
   "falsche Zuordnung" unterscheiden. Der automatische Alternativ-Versuch an
