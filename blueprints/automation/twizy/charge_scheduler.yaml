@@ -459,15 +459,25 @@ action:
       current_power_sensor: "{{ innen_power_sensor if states(innen_socket_helper) == vehicle_id else aussen_power_sensor }}"
       current_socket_helper: "{{ innen_socket_helper if states(innen_socket_helper) == vehicle_id else aussen_socket_helper }}"
       other_socket_helper: "{{ aussen_socket_helper if states(innen_socket_helper) == vehicle_id else innen_socket_helper }}"
-      # OVMS liefert die Restzeit bis voll manche Setups nicht als reine
-      # Zahl, sondern mit angehängtem Einheitssuffix (z. B. "0m", "90m")
-      # - ein strikter float()-Parse würde dann lautlos auf einen Default
-      # zurückfallen. Deshalb wird stattdessen die erste Zahl aus dem
-      # Zustandstext extrahiert, unabhängig von einem evtl. angehängten
-      # Suffix; liefert der Zustand gar keine Zahl (z. B. "unknown"), ist
-      # ovms_etr_minutes "none".
-      ovms_etr_matches: "{{ states(etr_full_sensor) | regex_findall('[0-9]+(?:\\.[0-9]+)?') }}"
-      ovms_etr_minutes: "{{ (ovms_etr_matches[0] | float) if ovms_etr_matches else none }}"
+      # OVMS liefert die Restzeit bis voll je nach Setup nicht als reine
+      # Zahl: mancher Zustandstext hat ein angehängtes Einheitssuffix
+      # (z. B. "90m"), andere kombinieren Stunden+Minuten in einem Text
+      # (z. B. "3h 34min") - ein strikter float()-Parse oder das Extrahieren
+      # nur der ERSTEN Zahl daraus wäre in beiden Fällen falsch oder würde
+      # lautlos auf einen Default zurückfallen. Manche OVMS-Setups liefern
+      # daher zusätzlich ein "raw_value"-Attribut mit dem unformatierten
+      # Minutenwert - falls vorhanden, wird bevorzugt dieses verwendet;
+      # andernfalls wird die erste Zahl aus dem Zustandstext als Fallback
+      # genutzt (passend für einfache Formate wie "90m", aber NICHT für
+      # kombinierte Stunden+Minuten-Texte - dafür ist das raw_value-Attribut
+      # nötig). Liefert weder Attribut noch Zustandstext eine Zahl (z. B.
+      # "unknown"), ist ovms_etr_minutes "none".
+      ovms_etr_raw_attr: "{{ state_attr(etr_full_sensor, 'raw_value') }}"
+      ovms_etr_raw_attr_minutes: "{{ (ovms_etr_raw_attr | float(-1)) if ovms_etr_raw_attr is not none else -1 }}"
+      ovms_etr_state_matches: "{{ states(etr_full_sensor) | regex_findall('[0-9]+(?:\\.[0-9]+)?') }}"
+      ovms_etr_minutes: >-
+        {{ ovms_etr_raw_attr_minutes if ovms_etr_raw_attr_minutes >= 0 else
+           ((ovms_etr_state_matches[0] | float) if ovms_etr_state_matches else none) }}
 
   - if:
       - condition: template
