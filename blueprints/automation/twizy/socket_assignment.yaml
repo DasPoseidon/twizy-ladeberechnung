@@ -17,6 +17,11 @@ blueprint:
     gewählten Zeitfensters, wird angenommen, dass die Fahrzeuge die
     Steckdosen getauscht haben – die Zuordnung wird vertauscht.
 
+    Regel 3 – Abfahrt: Verlässt ein Fahrzeug die "home"-Zone, wird seine
+    Steckdosen-Zuordnung (falls es gerade "innen" oder "außen" zugeordnet
+    war) auf "unbekannt" zurückgesetzt - eine leere Steckdose soll nicht
+    weiter als von einem Fahrzeug belegt gelten, das gar nicht da ist.
+
     Hinweis: Die tatsächliche Verifikation "hängt das erwartete Fahrzeug auch
     wirklich an der erwarteten Steckdose" erfolgt nicht hier, sondern im
     Blueprint "Twizy: Lade-Scheduler" (dort wird nach dem Einschalten anhand
@@ -146,6 +151,14 @@ trigger:
     from: "on"
     to: "off"
     id: trip_end_2
+  - platform: state
+    entity_id: !input twizy_1_location
+    from: "home"
+    id: departure_1
+  - platform: state
+    entity_id: !input twizy_2_location
+    from: "home"
+    id: departure_2
 
 action:
   - choose:
@@ -262,6 +275,53 @@ action:
                  (now() - states[twizy_1_moving_sensor].last_changed).total_seconds()
                  <= timedelta(**short_trip_window).total_seconds() }}
         sequence: *swap
+
+      # --- Regel 3: Abfahrt - Zuordnung zurücksetzen ---
+      - conditions:
+          - condition: trigger
+            id: departure_1
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ states(innen_socket_helper) == 'twizy_1' }}"
+            then:
+              - service: input_select.select_option
+                target:
+                  entity_id: !input innen_socket_helper
+                data:
+                  option: "unbekannt"
+          - if:
+              - condition: template
+                value_template: "{{ states(aussen_socket_helper) == 'twizy_1' }}"
+            then:
+              - service: input_select.select_option
+                target:
+                  entity_id: !input aussen_socket_helper
+                data:
+                  option: "unbekannt"
+
+      - conditions:
+          - condition: trigger
+            id: departure_2
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ states(innen_socket_helper) == 'twizy_2' }}"
+            then:
+              - service: input_select.select_option
+                target:
+                  entity_id: !input innen_socket_helper
+                data:
+                  option: "unbekannt"
+          - if:
+              - condition: template
+                value_template: "{{ states(aussen_socket_helper) == 'twizy_2' }}"
+            then:
+              - service: input_select.select_option
+                target:
+                  entity_id: !input aussen_socket_helper
+                data:
+                  option: "unbekannt"
 
 mode: queued
 max: 10

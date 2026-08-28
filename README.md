@@ -224,6 +224,10 @@ Selbst ausprobieren: **Entwicklerwerkzeuge → Aktionen** → Aktion
   `home`-Zone zu verlassen, und enden beide Fahrten innerhalb des
   konfigurierbaren Zeitfensters (Default 15 min), wird ein Platztausch
   angenommen und die Zuordnung vertauscht.
+- Verlässt ein Fahrzeug die `home`-Zone, wird seine Steckdosen-Zuordnung
+  (falls es gerade "innen" oder "außen" zugeordnet war) auf "unbekannt"
+  zurückgesetzt – eine leere Steckdose soll nicht weiter als von einem
+  Fahrzeug belegt gelten, das gar nicht da ist.
 
 ### Verifikation zu Ladebeginn & Verbindungsprüfung
 **Nur wenn das Fahrzeug laut Standort-Entität zuhause ist:** Ist es nicht
