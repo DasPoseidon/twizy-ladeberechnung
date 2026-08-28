@@ -423,13 +423,14 @@ zusätzliche Zeit erzwungen. Der Zähler setzt sich beim nächsten Tageswechsel
 automatisch zurück (erkannt am gespeicherten Datum).
 
 ### Manuelles Einschalten
-Wird eine Steckdose von Hand eingeschaltet (erkannt daran, dass die
-Zustandsänderung eine Nutzer-ID im Kontext trägt – die setzt Home Assistant
-nur bei Bedienung über UI/App/Sprachassistent, nicht bei einem
-Service-Aufruf aus einer Automatisierung heraus; eine gängige, nicht
-hundertprozentig fälschungssichere Heuristik – ein physischer Tastendruck
-direkt am Gerät wird z. B. nicht erkannt), wird das als manueller
-Ladewunsch übernommen: Es wird sofort weitergeladen, die Abfahrtszeit bleibt
+Wird eine Steckdose von Hand eingeschaltet, wird das als manueller
+Ladewunsch übernommen – erkannt daran, dass sich zum Zeitpunkt der
+Zustandsänderung *keine* Automatisierung findet, deren Kontext dazu passt
+(Home Assistant nutzt genau diese Verknüpfung selbst, um im Logbuch "durch
+Automatisierung X geschaltet" anzuzeigen; kein zusätzlicher Helfer nötig).
+Erkannt werden so gleichermaßen ein UI-Klick, App, Sprachassistent **und
+ein physischer Tastendruck direkt an der Steckdose**: Es wird sofort
+weitergeladen, die Abfahrtszeit bleibt
 aber als spätester "voll"-Zeitpunkt gültig – die Automatisierung schaltet
 weiterhin ab, sobald der SoC-Schwellwert erreicht ist (siehe
 [Ladeschluss-Erkennung](#ladeschluss-erkennung)) **oder das Fahrzeug
@@ -494,9 +495,11 @@ wieder eingeschaltet werden soll.
   – hier verlässt sich die Lösung vollständig auf den Überlastschutz der
   Steckdosen selbst.
 - Die "manuell eingeschaltet"-Erkennung basiert auf der Heuristik
-  "Zustandsänderung trägt eine Nutzer-ID im Kontext" und ist nicht zu
-  100 % robust (z. B. wird ein physischer Tastendruck direkt am Gerät
-  dadurch nicht als manuell erkannt).
+  "keine Automatisierung mit passendem Kontext gefunden" und ist nicht zu
+  100 % robust (theoretisch könnte ein sehr knapp zeitgleicher weiterer
+  Automatisierungs-Lauf denselben Kontext-Abgleich verfälschen - in der
+  Praxis extrem unwahrscheinlich). Erkennt dafür aber zuverlässig auch
+  einen physischen Tastendruck direkt an der Steckdose als manuell.
 - Die Verifikation greift auch bei manuell gestarteten Ladungen (bewusst
   so, damit eine falsche Zuordnung immer auffällt) – meldet nach der
   Toleranzzeit weder OVMS noch der Ladestrom etwas, kommt dadurch auch bei

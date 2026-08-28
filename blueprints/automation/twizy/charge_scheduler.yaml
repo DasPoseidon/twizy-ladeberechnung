@@ -481,22 +481,38 @@ action:
     then:
       - stop: "Steckdose außen pausiert (z. B. Rasenmäher) - {{ vehicle_id }} greift nicht ein"
 
-  # --- manuelles Ein-/Ausschalten erkennen (Heuristik: Kontext hat eine
-  # Nutzer-ID - die setzt Home Assistant nur, wenn ein Mensch über
-  # UI/App/Sprachassistent schaltet, nicht bei einem Service-Aufruf aus
-  # einer Automatisierung heraus. Ein per parent_id-Prüfung früher genutzter
-  # Ansatz war fehleranfällig: Läuft dieser Scheduler selbst z. B. durch den
-  # zeitgesteuerten Prüfzyklus (der keinen eigenen Kontext hat) und schaltet
-  # dabei automatisch ein, hat die resultierende Zustandsänderung ebenfalls
-  # parent_id "none" - ununterscheidbar von einem echten manuellen
-  # Einschalten. ---
+  # --- manuelles Ein-/Ausschalten erkennen (Heuristik: "wurde die
+  # Zustandsänderung von IRGENDEINER Automatisierung ausgelöst?" statt zu
+  # versuchen, "manuell" positiv zu erkennen - robuster, weil es UI-Klick,
+  # App, Sprachassistent UND physischen Tastendruck an der Steckdose
+  # gleichermaßen als "nicht automatisiert" abdeckt, ohne einen eigenen
+  # Merker-Helfer zu brauchen. Home Assistant setzt bei jedem Automatisierungs-
+  # Lauf den Kontext der auslösenden Automatisierungs-Entität
+  # (states.automation.<x>.context) auf denselben Kontext, unter dem auch
+  # alle Service-Aufrufe dieses Laufs passieren (z. B. switch.turn_on) -
+  # genau die Verknüpfung, die auch das Logbuch nutzt, um "durch
+  # Automatisierung X geschaltet" anzuzeigen. Findet sich KEINE
+  # Automatisierung mit passender Kontext-ID, kam die Zustandsänderung von
+  # woanders (Mensch über UI/App/Sprachassistent, physischer Tastendruck,
+  # o. ä.) - wird als manuell gewertet. Frühere Ansätze (Kontext ohne
+  # parent_id / Kontext mit Nutzer-ID) waren fehleranfällig: ein
+  # automatisches Einschalten dieses Schedulers selbst kann ebenfalls
+  # parent_id "none" und keine Nutzer-ID haben (z. B. ausgelöst durch den
+  # zeitgesteuerten Prüfzyklus), genau wie ein physischer Tastendruck an
+  # der Steckdose - beides wäre damit ununterscheidbar gewesen. ---
   - choose:
       - conditions:
           - condition: trigger
             id: switch_on
           - condition: template
             value_template: >
-              {{ trigger.entity_id == current_switch and trigger.to_state.context.user_id is not none }}
+              {% set ns = namespace(caused_by_automation=false) %}
+              {% for a in states.automation %}
+                {% if a.context.id == trigger.to_state.context.id %}
+                  {% set ns.caused_by_automation = true %}
+                {% endif %}
+              {% endfor %}
+              {{ trigger.entity_id == current_switch and not ns.caused_by_automation }}
         sequence:
           - service: input_boolean.turn_on
             target:
