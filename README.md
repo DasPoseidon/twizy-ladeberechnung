@@ -123,7 +123,7 @@ anderen Steckdose.
 
    | Blueprint | Wie oft anlegen | Wichtige Eingaben |
    |---|---|---|
-   | Steckdosen-Zuordnung | 1× | Standort- & Moving-Sensoren beider Fahrzeuge |
+   | Steckdosen-Zuordnung | 1× | Standort- & Moving-Sensoren beider Fahrzeuge, beide Schalter |
    | Lade-Scheduler | **2×** (einmal je Fahrzeug) | `vehicle_id` auf `twizy_1`/`twizy_2` setzen, jeweils die OVMS-Sensoren + Standort-Entität **des jeweiligen Fahrzeugs**, beide Schalter + beide Leistungssensoren |
    | Steckdose pausieren | 1× (optional, für "außen") | Schalter + Leistungssensor der Steckdose "außen" – siehe [Steckdose pausieren](#steckdose-pausieren-z-b-f%C3%BCr-rasenm%C3%A4her) |
 
@@ -224,10 +224,17 @@ Selbst ausprobieren: **Entwicklerwerkzeuge → Aktionen** → Aktion
   `home`-Zone zu verlassen, und enden beide Fahrten innerhalb des
   konfigurierbaren Zeitfensters (Default 15 min), wird ein Platztausch
   angenommen und die Zuordnung vertauscht.
-- Verlässt ein Fahrzeug die `home`-Zone, wird seine Steckdosen-Zuordnung
-  (falls es gerade "innen" oder "außen" zugeordnet war) auf "unbekannt"
-  zurückgesetzt – eine leere Steckdose soll nicht weiter als von einem
-  Fahrzeug belegt gelten, das gar nicht da ist.
+- Verlässt ein Fahrzeug die `home`-Zone, wird seine zugeordnete Steckdose
+  (falls es gerade "innen" oder "außen" zugeordnet war) direkt abgeschaltet
+  und die Zuordnung auf "unbekannt" zurückgesetzt – eine leere Steckdose
+  soll nicht weiter als von einem Fahrzeug belegt gelten, das gar nicht da
+  ist. Ist die Steckdose "außen" gerade pausiert (siehe
+  [Steckdose pausieren](#steckdose-pausieren-z-b-f%C3%BCr-rasenm%C3%A4her)),
+  wird sie dabei nicht angetastet – nur die Zuordnung wird zurückgesetzt.
+  Das Abschalten passiert bewusst hier direkt und nicht erst im
+  Lade-Scheduler: Würde zuerst nur die Zuordnung zurückgesetzt, könnte der
+  Lade-Scheduler die zugehörige Steckdose beim nächsten Lauf nicht mehr
+  finden und käme gar nicht mehr zum Abschalten.
 
 ### Verifikation zu Ladebeginn & Verbindungsprüfung
 **Nur wenn das Fahrzeug laut Standort-Entität zuhause ist:** Ist es nicht

@@ -18,9 +18,14 @@ blueprint:
     Steckdosen getauscht haben – die Zuordnung wird vertauscht.
 
     Regel 3 – Abfahrt: Verlässt ein Fahrzeug die "home"-Zone, wird seine
-    Steckdosen-Zuordnung (falls es gerade "innen" oder "außen" zugeordnet
-    war) auf "unbekannt" zurückgesetzt - eine leere Steckdose soll nicht
-    weiter als von einem Fahrzeug belegt gelten, das gar nicht da ist.
+    zugeordnete Steckdose (falls es gerade "innen" oder "außen" zugeordnet
+    war) direkt abgeschaltet und die Zuordnung auf "unbekannt"
+    zurückgesetzt - eine leere Steckdose soll nicht weiter als von einem
+    Fahrzeug belegt gelten, das gar nicht da ist. Das Abschalten passiert
+    bewusst hier und nicht erst im Blueprint "Twizy: Lade-Scheduler": Setzt
+    diese Automatisierung die Zuordnung zuerst auf "unbekannt" zurück,
+    kann der Lade-Scheduler beim nächsten Lauf keine Steckdose mehr
+    zuordnen und würde gar nicht mehr zum Abschalten kommen.
 
     Hinweis: Die tatsächliche Verifikation "hängt das erwartete Fahrzeug auch
     wirklich an der erwarteten Steckdose" erfolgt nicht hier, sondern im
@@ -82,6 +87,34 @@ blueprint:
         entity:
           domain: input_select
 
+    innen_switch:
+      name: Steckdose "innen" – Schalter
+      description: >
+        Wird bei Abfahrt abgeschaltet, falls die Steckdose gerade dem
+        wegfahrenden Fahrzeug zugeordnet war (siehe Regel 3).
+      selector:
+        entity:
+          domain: switch
+
+    aussen_switch:
+      name: Steckdose "außen" – Schalter
+      selector:
+        entity:
+          domain: switch
+
+    aussen_pause_helper:
+      name: Helper – Steckdose "außen" pausiert
+      description: >
+        Ist dieser Schalter "an" (siehe Blueprint "Twizy: Steckdose
+        pausieren"), lässt Regel 3 die Steckdose "außen" beim Abschalten
+        unangetastet - z. B. während sie für ein anderes Gerät wie einen
+        Rasenmäher genutzt wird. Die Zuordnung wird trotzdem
+        zurückgesetzt.
+      default: input_boolean.twizy_socket_aussen_pause
+      selector:
+        entity:
+          domain: input_boolean
+
     twizy_1_zuordnung_geprueft_helper:
       name: Helper – Twizy 1 Zuordnung verifiziert
       description: >
@@ -127,6 +160,9 @@ variables:
   short_trip_window: !input short_trip_window
   innen_socket_helper: !input innen_socket_helper
   aussen_socket_helper: !input aussen_socket_helper
+  innen_switch: !input innen_switch
+  aussen_switch: !input aussen_switch
+  aussen_pause_helper: !input aussen_pause_helper
   twizy_1_zuordnung_geprueft_helper: !input twizy_1_zuordnung_geprueft_helper
   twizy_2_zuordnung_geprueft_helper: !input twizy_2_zuordnung_geprueft_helper
   twizy_1_alternative_getestet_helper: !input twizy_1_alternative_getestet_helper
@@ -276,7 +312,7 @@ action:
                  <= timedelta(**short_trip_window).total_seconds() }}
         sequence: *swap
 
-      # --- Regel 3: Abfahrt - Zuordnung zurücksetzen ---
+      # --- Regel 3: Abfahrt - Steckdose abschalten & Zuordnung zurücksetzen ---
       - conditions:
           - condition: trigger
             id: departure_1
@@ -285,6 +321,9 @@ action:
               - condition: template
                 value_template: "{{ states(innen_socket_helper) == 'twizy_1' }}"
             then:
+              - service: switch.turn_off
+                target:
+                  entity_id: !input innen_switch
               - service: input_select.select_option
                 target:
                   entity_id: !input innen_socket_helper
@@ -294,6 +333,13 @@ action:
               - condition: template
                 value_template: "{{ states(aussen_socket_helper) == 'twizy_1' }}"
             then:
+              - if:
+                  - condition: template
+                    value_template: "{{ not is_state(aussen_pause_helper, 'on') }}"
+                then:
+                  - service: switch.turn_off
+                    target:
+                      entity_id: !input aussen_switch
               - service: input_select.select_option
                 target:
                   entity_id: !input aussen_socket_helper
@@ -308,6 +354,9 @@ action:
               - condition: template
                 value_template: "{{ states(innen_socket_helper) == 'twizy_2' }}"
             then:
+              - service: switch.turn_off
+                target:
+                  entity_id: !input innen_switch
               - service: input_select.select_option
                 target:
                   entity_id: !input innen_socket_helper
@@ -317,6 +366,13 @@ action:
               - condition: template
                 value_template: "{{ states(aussen_socket_helper) == 'twizy_2' }}"
             then:
+              - if:
+                  - condition: template
+                    value_template: "{{ not is_state(aussen_pause_helper, 'on') }}"
+                then:
+                  - service: switch.turn_off
+                    target:
+                      entity_id: !input aussen_switch
               - service: input_select.select_option
                 target:
                   entity_id: !input aussen_socket_helper
