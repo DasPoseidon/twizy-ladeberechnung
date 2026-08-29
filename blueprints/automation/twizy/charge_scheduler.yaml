@@ -474,6 +474,25 @@ action:
       - condition: template
         value_template: "{{ current_switch is none }}"
     then:
+      # Status-Anzeigen aktualisieren, bevor abgebrochen wird - sonst
+      # bliebe z. B. nach einer Abfahrt (Zuordnung wird dabei auf
+      # "unbekannt" zurückgesetzt, siehe socket_assignment.yaml) die
+      # zuletzt berechnete Anzeige ("Lädt jetzt" o. ä.) fälschlich stehen.
+      - service: input_text.set_value
+        target:
+          entity_id: "{{ ladeplan_helper }}"
+        data:
+          value: "Keiner Steckdose zugeordnet"
+      - service: input_text.set_value
+        target:
+          entity_id: "{{ next_start_helper }}"
+        data:
+          value: "Keiner Steckdose zugeordnet"
+      - service: input_number.set_value
+        target:
+          entity_id: "{{ expected_duration_helper }}"
+        data:
+          value: 0
       - stop: "Fahrzeug {{ vehicle_id }} aktuell keiner Steckdose zugeordnet"
 
   - if:
