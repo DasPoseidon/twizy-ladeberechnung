@@ -234,7 +234,10 @@ Selbst ausprobieren: **Entwicklerwerkzeuge → Aktionen** → Aktion
   Das Abschalten passiert bewusst hier direkt und nicht erst im
   Lade-Scheduler: Würde zuerst nur die Zuordnung zurückgesetzt, könnte der
   Lade-Scheduler die zugehörige Steckdose beim nächsten Lauf nicht mehr
-  finden und käme gar nicht mehr zum Abschalten.
+  finden und käme gar nicht mehr zum Abschalten. Dabei werden auch die
+  "Zuordnung verifiziert"- und "andere Steckdose bereits getestet"-Helfer
+  des abfahrenden Fahrzeugs zurückgesetzt – eine Verifikation aus der
+  vergangenen Sitzung soll nicht fälschlich für die nächste weitergelten.
 
 ### Verifikation zu Ladebeginn & Verbindungsprüfung
 **Nur wenn das Fahrzeug laut Standort-Entität zuhause ist:** Ist es nicht
