@@ -424,13 +424,14 @@ automatisch zurück (erkannt am gespeicherten Datum).
 
 ### Manuelles Einschalten
 Wird eine Steckdose von Hand eingeschaltet, wird das als manueller
-Ladewunsch übernommen – erkannt daran, dass sich zum Zeitpunkt der
-Zustandsänderung *keine* Automatisierung findet, deren Kontext dazu passt
-(Home Assistant nutzt genau diese Verknüpfung selbst, um im Logbuch "durch
-Automatisierung X geschaltet" anzuzeigen; kein zusätzlicher Helfer nötig).
-Erkannt werden so gleichermaßen ein UI-Klick, App, Sprachassistent **und
-ein physischer Tastendruck direkt an der Steckdose**: Es wird sofort
-weitergeladen, die Abfahrtszeit bleibt
+Ladewunsch übernommen – erkannt daran, dass die Kontext-ID der
+Zustandsänderung nicht mit der Kontext-ID übereinstimmt, die dieser
+Lade-Scheduler beim letzten eigenen automatischen Einschalten in einem
+internen Helfer hinterlegt hat
+(`twizy_{1,2}_letzter_automatischer_einschaltkontext`). Erkannt werden so
+gleichermaßen ein UI-Klick, App, Sprachassistent **und ein physischer
+Tastendruck direkt an der Steckdose**: Es wird sofort weitergeladen, die
+Abfahrtszeit bleibt
 aber als spätester "voll"-Zeitpunkt gültig – die Automatisierung schaltet
 weiterhin ab, sobald der SoC-Schwellwert erreicht ist (siehe
 [Ladeschluss-Erkennung](#ladeschluss-erkennung)) **oder das Fahrzeug
@@ -494,12 +495,14 @@ wieder eingeschaltet werden soll.
   keine Vorab-Prüfung (Manuell übersteuert die Überlast-Vermeidung bewusst)
   – hier verlässt sich die Lösung vollständig auf den Überlastschutz der
   Steckdosen selbst.
-- Die "manuell eingeschaltet"-Erkennung basiert auf der Heuristik
-  "keine Automatisierung mit passendem Kontext gefunden" und ist nicht zu
-  100 % robust (theoretisch könnte ein sehr knapp zeitgleicher weiterer
-  Automatisierungs-Lauf denselben Kontext-Abgleich verfälschen - in der
-  Praxis extrem unwahrscheinlich). Erkennt dafür aber zuverlässig auch
-  einen physischen Tastendruck direkt an der Steckdose als manuell.
+- Die "manuell eingeschaltet"-Erkennung merkt sich die Kontext-ID jedes
+  eigenen automatischen Einschaltens in einem internen Helfer und
+  vergleicht sie beim nächsten Einschalt-Ereignis - stimmt sie nicht
+  überein, gilt das Einschalten als manuell. Erkennt damit zuverlässig
+  auch einen physischen Tastendruck direkt an der Steckdose. (Ein früherer
+  Ansatz ohne diesen Helfer, der stattdessen prüfte, ob der Kontext zu
+  irgendeiner Automatisierung passt, war bei den vielen sich teils
+  überschneidenden Triggern dieses Blueprints nicht zuverlässig genug.)
 - Die Verifikation greift auch bei manuell gestarteten Ladungen (bewusst
   so, damit eine falsche Zuordnung immer auffällt) – meldet nach der
   Toleranzzeit weder OVMS noch der Ladestrom etwas, kommt dadurch auch bei

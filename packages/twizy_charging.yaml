@@ -361,3 +361,16 @@ input_text:
     name: "Twizy 2 – Nächster geplanter Ladestart"
     icon: mdi:calendar-clock-outline
     max: 255
+
+  # Kontext-ID des zuletzt vom Lade-Scheduler selbst automatisch
+  # ausgelösten Einschaltens (technischer Helfer, kein Anzeige-/
+  # Debug-Wert) - dient der Unterscheidung "war das dieser Scheduler
+  # selbst oder von woanders (UI, App, Sprachassistent, physischer
+  # Tastendruck an der Steckdose)?" beim Erkennen manuellen Einschaltens.
+  twizy_1_letzter_automatischer_einschaltkontext:
+    name: "Twizy 1 – Kontext-ID letztes automatisches Einschalten (intern)"
+    max: 64
+
+  twizy_2_letzter_automatischer_einschaltkontext:
+    name: "Twizy 2 – Kontext-ID letztes automatisches Einschalten (intern)"
+    max: 64

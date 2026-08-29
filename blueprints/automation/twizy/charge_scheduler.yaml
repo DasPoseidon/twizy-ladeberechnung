@@ -366,6 +366,7 @@ variables:
   session_start_etr_helper: "{{ 'input_number.' ~ vehicle_id ~ '_sitzung_start_etr_minuten' }}"
   charging_finished_helper: "{{ 'input_boolean.' ~ vehicle_id ~ '_ladevorgang_fertig' }}"
   expected_duration_helper: "{{ 'input_number.' ~ vehicle_id ~ '_erwartete_ladedauer_minuten' }}"
+  last_auto_switch_on_context_helper: "{{ 'input_text.' ~ vehicle_id ~ '_letzter_automatischer_einschaltkontext' }}"
 
 trigger:
   - platform: time_pattern
@@ -481,38 +482,29 @@ action:
     then:
       - stop: "Steckdose außen pausiert (z. B. Rasenmäher) - {{ vehicle_id }} greift nicht ein"
 
-  # --- manuelles Ein-/Ausschalten erkennen (Heuristik: "wurde die
-  # Zustandsänderung von IRGENDEINER Automatisierung ausgelöst?" statt zu
-  # versuchen, "manuell" positiv zu erkennen - robuster, weil es UI-Klick,
-  # App, Sprachassistent UND physischen Tastendruck an der Steckdose
-  # gleichermaßen als "nicht automatisiert" abdeckt, ohne einen eigenen
-  # Merker-Helfer zu brauchen. Home Assistant setzt bei jedem Automatisierungs-
-  # Lauf den Kontext der auslösenden Automatisierungs-Entität
-  # (states.automation.<x>.context) auf denselben Kontext, unter dem auch
-  # alle Service-Aufrufe dieses Laufs passieren (z. B. switch.turn_on) -
-  # genau die Verknüpfung, die auch das Logbuch nutzt, um "durch
-  # Automatisierung X geschaltet" anzuzeigen. Findet sich KEINE
-  # Automatisierung mit passender Kontext-ID, kam die Zustandsänderung von
-  # woanders (Mensch über UI/App/Sprachassistent, physischer Tastendruck,
-  # o. ä.) - wird als manuell gewertet. Frühere Ansätze (Kontext ohne
-  # parent_id / Kontext mit Nutzer-ID) waren fehleranfällig: ein
-  # automatisches Einschalten dieses Schedulers selbst kann ebenfalls
-  # parent_id "none" und keine Nutzer-ID haben (z. B. ausgelöst durch den
-  # zeitgesteuerten Prüfzyklus), genau wie ein physischer Tastendruck an
-  # der Steckdose - beides wäre damit ununterscheidbar gewesen. ---
+  # --- manuelles Ein-/Ausschalten erkennen (Heuristik: "war das dieser
+  # Scheduler selbst?" - jeder automatische switch.turn_on dieses Blueprints
+  # merkt seine eigene Kontext-ID in last_auto_switch_on_context_helper
+  # (siehe unten); stimmt die Kontext-ID der switch_on-Zustandsänderung
+  # NICHT damit überein, kam das Einschalten von woanders (Mensch über
+  # UI/App/Sprachassistent, physischer Tastendruck an der Steckdose,
+  # o. ä.) - wird als manuell gewertet. Deckt damit alle diese Quellen
+  # gleichermaßen ab, ohne sie einzeln unterscheiden zu müssen.
+  #
+  # Frühere Ansätze ohne eigenen Helfer waren fehleranfällig: Weder "Kontext
+  # ohne parent_id" noch "Kontext mit Nutzer-ID" noch der Abgleich gegen
+  # states.automation.*.context (das spiegelt den Kontext der
+  # Automatisierungs-Entität nicht zuverlässig rechtzeitig genug wider -
+  # bei den vielen sich teils überschneidenden Triggern dieses Blueprints
+  # kam es dadurch zu Fehlerkennungen) lieferten ein robustes Ergebnis. ---
   - choose:
       - conditions:
           - condition: trigger
             id: switch_on
           - condition: template
             value_template: >
-              {% set ns = namespace(caused_by_automation=false) %}
-              {% for a in states.automation %}
-                {% if a.context.id == trigger.to_state.context.id %}
-                  {% set ns.caused_by_automation = true %}
-                {% endif %}
-              {% endfor %}
-              {{ trigger.entity_id == current_switch and not ns.caused_by_automation }}
+              {{ trigger.entity_id == current_switch and
+                 trigger.to_state.context.id != states(last_auto_switch_on_context_helper) }}
         sequence:
           - service: input_boolean.turn_on
             target:
@@ -872,6 +864,14 @@ action:
           - service: input_boolean.turn_off
             target:
               entity_id: "{{ socket_zuordnung_geprueft_helper }}"
+          # Eigene Kontext-ID merken, damit die switch_on-Auswertung oben
+          # dieses automatische Einschalten nicht fälschlich als manuell
+          # erkennt (siehe Kommentar dort).
+          - service: input_text.set_value
+            target:
+              entity_id: "{{ last_auto_switch_on_context_helper }}"
+            data:
+              value: "{{ context.id }}"
           - service: switch.turn_on
             target:
               entity_id: "{{ current_switch }}"
@@ -953,6 +953,14 @@ action:
                   - service: input_boolean.turn_off
                     target:
                       entity_id: "{{ socket_zuordnung_geprueft_helper }}"
+                  # Eigene Kontext-ID merken (siehe Kommentar bei der
+                  # switch_on-Auswertung oben) - other_switch wird ab dem
+                  # nächsten Lauf current_switch für dieses Fahrzeug.
+                  - service: input_text.set_value
+                    target:
+                      entity_id: "{{ last_auto_switch_on_context_helper }}"
+                    data:
+                      value: "{{ context.id }}"
                   - service: switch.turn_on
                     target:
                       entity_id: "{{ other_switch }}"
