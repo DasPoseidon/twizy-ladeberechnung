@@ -216,10 +216,16 @@ Selbst ausprobieren: **Entwicklerwerkzeuge → Aktionen** → Aktion
 </details>
 
 ### Steckdosen-Zuordnung
-- Fährt ein Fahrzeug in die `home`-Zone ein, wird es "außen" zugeordnet;
-  war das andere Fahrzeug da bereits zuhause, wird es auf "innen"
-  zurückgestuft. Da diese Regel bei jeder Ankunft neu greift, landet immer
-  das zuletzt angekommene Fahrzeug auf "außen".
+- Fährt ein Fahrzeug in die `home`-Zone ein und ist noch keiner Steckdose
+  zugeordnet, wird es "außen" zugeordnet; war das andere Fahrzeug da
+  bereits zuhause, wird es auf "innen" zurückgestuft. Da diese Regel bei
+  jeder echten Neu-Ankunft neu greift, landet immer das zuletzt angekommene
+  Fahrzeug auf "außen". Ist das ankommende Fahrzeug bereits einer Steckdose
+  zugeordnet (z. B. nach einem erfolgreichen Alternativ-Steckdosen-Test,
+  siehe [Verifikation](#verifikation-zu-ladebeginn--verbindungspr%C3%BCfung)),
+  greift diese Regel nicht – sonst würde ein erneutes `home`-Ereignis
+  (z. B. durch kurzes GPS-Flackern des Standort-Sensors) die korrekte
+  Zuordnung wieder überschreiben.
 - Bewegen sich beide Fahrzeuge kurz (laut OVMS-Moving-Sensor), ohne die
   `home`-Zone zu verlassen, und enden beide Fahrten innerhalb des
   konfigurierbaren Zeitfensters (Default 15 min), wird ein Platztausch

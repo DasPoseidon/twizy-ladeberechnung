@@ -4,12 +4,17 @@ blueprint:
     Pflegt die beiden input_select-Helper, die festhalten, welcher Twizy
     aktuell an der Steckdose "innen" bzw. "außen" hängt.
 
-    Regel 1 – Ankunft: Fährt ein Fahrzeug in die "home"-Zone ein, wird es der
-    Steckdose "außen" zugeordnet. War das jeweils andere Fahrzeug zu diesem
-    Zeitpunkt bereits zuhause, wird es automatisch auf "innen" zurückgestuft.
-    Da diese Regel bei jeder Ankunft neu angewendet wird, landet immer genau
-    das zuletzt angekommene Fahrzeug auf "außen" – unabhängig von der
-    Reihenfolge.
+    Regel 1 – Ankunft: Fährt ein Fahrzeug in die "home"-Zone ein und ist noch
+    keiner der beiden Steckdosen zugeordnet, wird es "außen" zugeordnet. War
+    das jeweils andere Fahrzeug zu diesem Zeitpunkt bereits zuhause, wird es
+    automatisch auf "innen" zurückgestuft. Da diese Regel bei jeder echten
+    Neu-Ankunft neu angewendet wird, landet immer genau das zuletzt
+    angekommene Fahrzeug auf "außen" – unabhängig von der Reihenfolge. Ist
+    das ankommende Fahrzeug bereits "innen" oder "außen" zugeordnet (z. B.
+    nach einem erfolgreichen Alternativ-Steckdosen-Test, siehe Blueprint
+    "Twizy: Lade-Scheduler"), greift diese Regel nicht - sonst würde ein
+    erneutes "home"-Ereignis (z. B. durch kurzes GPS-Flackern des
+    Standort-Sensors) eine bereits korrekte Zuordnung wieder überschreiben.
 
     Regel 2 – Platztausch ohne Wegfahren: Bewegen sich beide Fahrzeuge kurz
     (laut "Fährt gerade"-Sensor der OVMS-Integration), ohne dass die
@@ -206,6 +211,16 @@ action:
       - conditions:
           - condition: trigger
             id: arrival_1
+          # Nur bei echter Neu-Ankunft zuordnen, nicht wenn twizy_1 schon
+          # "innen" oder "außen" zugeordnet ist (z. B. nach einem
+          # erfolgreichen Alternativ-Steckdosen-Test, siehe Lade-Scheduler).
+          # Löst der Standort-Sensor "home" mehrfach aus (kurzes
+          # GPS-Flackern, doppeltes Event), würde diese Regel sonst eine
+          # bereits korrekte Zuordnung wieder auf "außen" zurücksetzen.
+          - condition: template
+            value_template: >-
+              {{ states(innen_socket_helper) != 'twizy_1' and
+                 states(aussen_socket_helper) != 'twizy_1' }}
         sequence:
           - service: input_boolean.turn_off
             target:
@@ -236,6 +251,11 @@ action:
       - conditions:
           - condition: trigger
             id: arrival_2
+          # Siehe Kommentar bei arrival_1 - dasselbe für twizy_2.
+          - condition: template
+            value_template: >-
+              {{ states(innen_socket_helper) != 'twizy_2' and
+                 states(aussen_socket_helper) != 'twizy_2' }}
         sequence:
           - service: input_boolean.turn_off
             target:
