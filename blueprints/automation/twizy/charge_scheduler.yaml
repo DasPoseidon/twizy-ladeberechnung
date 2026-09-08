@@ -51,12 +51,15 @@ blueprint:
     7. Nach dem Einschalten wird geprüft, ob das Fahrzeug tatsächlich zu
        laden beginnt - anhand des OVMS-Lade-/Fahrzustands-Sensors ODER
        eines messbaren Ladestroms an der zugeordneten Steckdose (über der
-       Ladeschluss-Schwelle). Bestätigt sich innerhalb der Toleranzzeit
-       keins von beidem (falsche Zuordnung oder Fahrzeug nicht
-       angeschlossen): Steht die jeweils andere Steckdose gerade frei und
-       wurde das für diese Ankunft noch nicht versucht, wird testweise dort
-       weitergemacht und die Zuordnung bei Erfolg entsprechend angepasst
-       (genau ein Versuch, kein Hin-und-her). Ansonsten (oder bei manuellem
+       Ladeschluss-Schwelle). Bestätigt sich innerhalb der (normalen,
+       großzügigeren) Toleranzzeit keins von beidem, ODER fließt schon
+       innerhalb einer viel kürzeren Toleranzzeit (Default 30 s) gar kein
+       nennenswerter Strom (eindeutiges Zeichen für "nichts angeschlossen"):
+       Ist die jeweils andere Steckdose gerade keinem anderen Fahrzeug
+       zugeordnet (unabhängig von ihrem Schalterzustand) und wurde das für
+       diese Ankunft noch nicht versucht, wird testweise dort weitergemacht
+       und die Zuordnung bei Erfolg entsprechend angepasst (genau ein
+       Versuch, kein Hin-und-her). Ansonsten (oder bei manuellem
        Einschalten) wird nur eine Benachrichtigung ausgelöst - die
        Steckdose bleibt an, damit sie nicht bei jedem Prüfzyklus fürs
        restliche Ladefenster an-/ausgeklickt wird. Ein eigener "Kabel
@@ -275,6 +278,36 @@ blueprint:
       selector:
         duration: {}
 
+    no_connection_power_threshold:
+      name: Schwelle "eindeutig nichts angeschlossen" (W)
+      description: >
+        Bleibt der gemessene Ladestrom durchgehend unter diesem Wert (siehe
+        Toleranzzeit unten), gilt das schon vor Ablauf der normalen
+        Verifikations-Toleranzzeit oben als eindeutiges Zeichen, dass an
+        dieser Steckdose nichts angeschlossen ist - schneller als die
+        normale Toleranzzeit, die auch den Fall abdeckt, dass zwar Strom
+        fließt, der OVMS-Lade-/Fahrzustand aber (noch) kein "lädt aktiv"
+        meldet.
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 200
+          step: 1
+          unit_of_measurement: W
+
+    no_connection_grace_period:
+      name: Toleranzzeit "eindeutig nichts angeschlossen"
+      description: >
+        So lange muss der Ladestrom durchgehend unter der obigen Schwelle
+        bleiben, bevor (unabhängig von der normalen, längeren
+        Verifikations-Toleranzzeit) von "eindeutig nicht angeschlossen"
+        ausgegangen wird.
+      default:
+        seconds: 30
+      selector:
+        duration: {}
+
     location_sensor:
       name: Standort-Entität dieses Fahrzeugs
       description: >
@@ -337,6 +370,8 @@ variables:
   charge_state_sensor: !input charge_state_sensor
   charging_state_values: !input charging_state_values
   verification_grace_period: !input verification_grace_period
+  no_connection_power_threshold: !input no_connection_power_threshold
+  no_connection_grace_period: !input no_connection_grace_period
   location_sensor: !input location_sensor
   connectivity_probe_window: !input connectivity_probe_window
   # Alle folgenden Helper-Entity-IDs folgen im Paket
@@ -425,6 +460,17 @@ trigger:
   #   geblieben - siehe charging_finished_helper unten. Beide Steckdosen
   #   gelistet (siehe Hinweis oben), im action-Teil wird geprüft, ob es
   #   tatsächlich die eigene Steckdose war.
+  - platform: numeric_state
+    entity_id:
+      - !input innen_power_sensor
+      - !input aussen_power_sensor
+    below: !input no_connection_power_threshold
+    for: !input no_connection_grace_period
+    id: periodic
+  # ^ sorgt dafür, dass der schnelle "eindeutig nichts angeschlossen"-Check
+  #   oben zeitnah ausgewertet wird, statt erst beim nächsten regulären
+  #   Prüfzyklus - wichtig, weil ein durchgehend konstanter Messwert (z. B.
+  #   0 W) sonst evtl. gar keine weiteren Zustandsänderungen mehr auslöst.
   - platform: state
     entity_id:
       - !input innen_switch
@@ -818,10 +864,19 @@ action:
       verified_charging: "{{ is_charging_now or is_drawing_power }}"
       seconds_since_switch_on: "{{ (now() - states[current_switch].last_changed).total_seconds() if is_state(current_switch, 'on') else 0 }}"
       verification_grace_seconds: "{{ timedelta(**verification_grace_period).total_seconds() }}"
+      # Schneller Vorab-Check: Fließt gar kein nennenswerter Strom (statt nur
+      # "OVMS meldet noch kein 'lädt aktiv'"), muss nicht die volle,
+      # großzügigere Verifikations-Toleranzzeit abgewartet werden - das ist
+      # ein eindeutigeres Zeichen als das bloße Fehlen der OVMS-Meldung
+      # (die z. B. auch einfach nachhinken kann, während schon Strom
+      # fließt).
+      no_connection_grace_seconds: "{{ timedelta(**no_connection_grace_period).total_seconds() }}"
+      no_power_at_all: "{{ (states(current_power_sensor) | float(0)) < no_connection_power_threshold }}"
       verification_failed: >-
         {{ is_home and is_state(current_switch, 'on') and not verified_charging and
            not is_state(socket_zuordnung_geprueft_helper, 'on') and
-           seconds_since_switch_on >= verification_grace_seconds }}
+           (seconds_since_switch_on >= verification_grace_seconds or
+            (no_power_at_all and seconds_since_switch_on >= no_connection_grace_seconds)) }}
 
   - if:
       - condition: template
@@ -936,22 +991,25 @@ action:
         # würde die Steckdose fürs restliche Ladefenster dauerhaft an-/
         # ausklicken. Stattdessen bleibt die Steckdose einfach an (die
         # normale should_charge_now-Logik schaltet sie regulär ab, sobald
-        # das Preisfenster/die Deadline das vorsieht). Zusätzlich: steht
-        # die andere Steckdose gerade frei (kein Eingriff in eine laufende
-        # Ladung des anderen Fahrzeugs) und wurde das noch nicht versucht,
-        # wird testweise dort weitergemacht, falls die Zuordnung schlicht
-        # vertauscht ist - genau EIN Versuch pro Ankunfts-Episode
-        # (alternative_tested_helper, wird bei jeder neuen Zuordnung in
-        # socket_assignment.yaml zurückgesetzt), sonst nur benachrichtigt.
-        # Bewusst nicht bei manuellem Einschalten (is_manual) - dafür gibt
-        # es die "Steckdose pausieren"-Funktion.
+        # das Preisfenster/die Deadline das vorsieht). Zusätzlich: ist die
+        # andere Steckdose gerade KEINEM anderen Fahrzeug zugeordnet (kein
+        # Eingriff in eine laufende Ladung des anderen Fahrzeugs - bewusst
+        # anhand der Zuordnung geprüft, nicht am Schalterzustand: der
+        # könnte z. B. noch von vorher an sein, obwohl niemand zugeordnet
+        # ist) und wurde das noch nicht versucht, wird testweise dort
+        # weitergemacht, falls die Zuordnung schlicht vertauscht ist -
+        # genau EIN Versuch pro Ankunfts-Episode (alternative_tested_helper,
+        # wird bei jeder neuen Zuordnung in socket_assignment.yaml
+        # zurückgesetzt), sonst nur benachrichtigt. Bewusst nicht bei
+        # manuellem Einschalten (is_manual) - dafür gibt es die "Steckdose
+        # pausieren"-Funktion.
         sequence:
           - choose:
               - conditions:
                   - condition: template
                     value_template: >-
                       {{ not is_manual and not is_state(alternative_tested_helper, 'on') and
-                         is_state(other_switch, 'off') }}
+                         states(other_socket_helper) == 'unbekannt' }}
                 sequence:
                   - service: input_boolean.turn_on
                     target:

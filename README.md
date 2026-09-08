@@ -268,7 +268,14 @@ zugeordneten Steckdose (über der Ladeschluss-Schwelle
 OVMS-Zustandssensor des zugeordneten Fahrzeugs innerhalb der Toleranzzeit
 (Default 15 min) einen "lädt aktiv"-Wert (Default nur `charging`,
 konfigurierbar) **oder** wird spürbar Strom gezogen, gilt die aktuelle
-Zuordnung als bestätigt
+Zuordnung als bestätigt. Fließt dagegen von Anfang an gar kein
+nennenswerter Strom (unter `no_connection_power_threshold`, Default 5 W),
+muss nicht erst die volle Toleranzzeit abgewartet werden – das gilt schon
+nach einer viel kürzeren, eigenen Toleranzzeit
+(`no_connection_grace_period`, Default 30 s) als eindeutiges Zeichen, dass
+dort nichts angeschlossen ist (die normale, längere Toleranzzeit bleibt
+für den Fall, dass zwar Strom fließt, der OVMS-Zustand aber noch nicht
+nachgezogen hat)
 (`input_boolean.twizy_{1,2}_zuordnung_geprueft` → an – **ein eigener Helper
 je Fahrzeug**, nicht geteilt, sonst würde eine erfolgreiche Verifikation
 von Fahrzeug 1 fälschlich auch für Fahrzeug 2 gelten). Dieser Helfer wird
@@ -278,10 +285,12 @@ weiter, falls inzwischen z. B. ein anderes Fahrzeug an derselben Steckdose
 hängt.
 
 Passiert das nicht (weder OVMS-Zustand noch Ladestrom bestätigen etwas):
-Steht die jeweils andere Steckdose gerade frei (kein Eingriff in eine
-laufende Ladung des anderen Fahrzeugs) und wurde das für diese Ankunft noch
-nicht versucht, schaltet der Lade-Scheduler testweise dorthin um –
-vielleicht ist die Zuordnung einfach vertauscht. Bestätigt sich dort eines
+Ist die jeweils andere Steckdose gerade keinem anderen Fahrzeug zugeordnet
+(kein Eingriff in eine laufende Ladung des anderen Fahrzeugs – bewusst
+anhand der Zuordnung geprüft, nicht am Schalterzustand: der könnte z. B.
+noch von vorher an sein, obwohl niemand zugeordnet ist) und wurde das für
+diese Ankunft noch nicht versucht, schaltet der Lade-Scheduler testweise
+dorthin um – vielleicht ist die Zuordnung einfach vertauscht. Bestätigt sich dort eines
 der beiden Signale, bleibt die angepasste Zuordnung bestehen; falls nicht,
 bleibt es bei dieser einen Alternative (kein
 Hin-und-her zwischen den Steckdosen) und es wird nur noch benachrichtigt.
