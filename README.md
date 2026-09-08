@@ -217,12 +217,15 @@ Selbst ausprobieren: **Entwicklerwerkzeuge → Aktionen** → Aktion
 
 ### Steckdosen-Zuordnung
 - Fährt ein Fahrzeug in die `home`-Zone ein und ist noch keiner Steckdose
-  zugeordnet, wird es "außen" zugeordnet; war das andere Fahrzeug da
-  bereits zuhause, wird es auf "innen" zurückgestuft. Da diese Regel bei
-  jeder echten Neu-Ankunft neu greift, landet immer das zuletzt angekommene
-  Fahrzeug auf "außen". Ist das ankommende Fahrzeug bereits einer Steckdose
-  zugeordnet (z. B. nach einem erfolgreichen Alternativ-Steckdosen-Test,
-  siehe [Verifikation](#verifikation-zu-ladebeginn--verbindungspr%C3%BCfung)),
+  zugeordnet, bekommt es die freie Steckdose: Ist das andere Fahrzeug nicht
+  zuhause oder zufällig schon "außen" zugeordnet, bekommt der Ankömmling
+  "innen" – ist das andere Fahrzeug bereits "innen" zugeordnet, bekommt der
+  Ankömmling "außen". Das zuerst zuhause ankommende Fahrzeug landet also
+  normalerweise auf "innen", das zweite auf "außen" – das bereits zuhause
+  befindliche Fahrzeug wird dabei nicht angetastet. Ist das ankommende
+  Fahrzeug bereits einer Steckdose zugeordnet (z. B. nach einem
+  erfolgreichen Alternativ-Steckdosen-Test, siehe
+  [Verifikation](#verifikation-zu-ladebeginn--verbindungspr%C3%BCfung)),
   greift diese Regel nicht – sonst würde ein erneutes `home`-Ereignis
   (z. B. durch kurzes GPS-Flackern des Standort-Sensors) die korrekte
   Zuordnung wieder überschreiben.

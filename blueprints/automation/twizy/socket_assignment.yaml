@@ -5,16 +5,18 @@ blueprint:
     aktuell an der Steckdose "innen" bzw. "außen" hängt.
 
     Regel 1 – Ankunft: Fährt ein Fahrzeug in die "home"-Zone ein und ist noch
-    keiner der beiden Steckdosen zugeordnet, wird es "außen" zugeordnet. War
-    das jeweils andere Fahrzeug zu diesem Zeitpunkt bereits zuhause, wird es
-    automatisch auf "innen" zurückgestuft. Da diese Regel bei jeder echten
-    Neu-Ankunft neu angewendet wird, landet immer genau das zuletzt
-    angekommene Fahrzeug auf "außen" – unabhängig von der Reihenfolge. Ist
-    das ankommende Fahrzeug bereits "innen" oder "außen" zugeordnet (z. B.
-    nach einem erfolgreichen Alternativ-Steckdosen-Test, siehe Blueprint
-    "Twizy: Lade-Scheduler"), greift diese Regel nicht - sonst würde ein
-    erneutes "home"-Ereignis (z. B. durch kurzes GPS-Flackern des
-    Standort-Sensors) eine bereits korrekte Zuordnung wieder überschreiben.
+    keiner der beiden Steckdosen zugeordnet, bekommt es die freie Steckdose:
+    Ist das andere Fahrzeug nicht zuhause oder zufällig schon "außen"
+    zugeordnet, bekommt der Ankömmling "innen" - ist das andere Fahrzeug
+    bereits "innen" zugeordnet, bekommt der Ankömmling "außen". Das zuerst
+    zuhause ankommende Fahrzeug landet also normalerweise auf "innen", das
+    zweite auf "außen" - das bereits zuhause befindliche Fahrzeug wird dabei
+    nicht angetastet. Ist das ankommende Fahrzeug bereits "innen" oder
+    "außen" zugeordnet (z. B. nach einem erfolgreichen
+    Alternativ-Steckdosen-Test, siehe Blueprint "Twizy: Lade-Scheduler"),
+    greift diese Regel nicht - sonst würde ein erneutes "home"-Ereignis
+    (z. B. durch kurzes GPS-Flackern des Standort-Sensors) eine bereits
+    korrekte Zuordnung wieder überschreiben.
 
     Regel 2 – Platztausch ohne Wegfahren: Bewegen sich beide Fahrzeuge kurz
     (laut "Fährt gerade"-Sensor der OVMS-Integration), ohne dass die
@@ -227,26 +229,20 @@ action:
               entity_id:
                 - !input twizy_1_zuordnung_geprueft_helper
                 - !input twizy_1_alternative_getestet_helper
+          # Erstes zuhause ankommendes Fahrzeug bekommt "innen", das zweite
+          # "außen": ist twizy_2 bereits "innen" zugeordnet, weicht twizy_1
+          # auf "außen" aus - sonst (twizy_2 nicht zuhause, oder zufällig
+          # schon "außen" zugeordnet) bekommt twizy_1 "innen". So bleibt das
+          # bereits zuhause befindliche Fahrzeug unangetastet, es wird nur
+          # die freie Steckdose für den neuen Ankömmling bestimmt.
+          - variables:
+              twizy_1_zielsteckdose: >-
+                {{ aussen_socket_helper if states(innen_socket_helper) == 'twizy_2' else innen_socket_helper }}
           - service: input_select.select_option
             target:
-              entity_id: !input aussen_socket_helper
+              entity_id: "{{ twizy_1_zielsteckdose }}"
             data:
               option: "twizy_1"
-          - if:
-              - condition: state
-                entity_id: !input twizy_2_location
-                state: "home"
-            then:
-              - service: input_boolean.turn_off
-                target:
-                  entity_id:
-                    - !input twizy_2_zuordnung_geprueft_helper
-                    - !input twizy_2_alternative_getestet_helper
-              - service: input_select.select_option
-                target:
-                  entity_id: !input innen_socket_helper
-                data:
-                  option: "twizy_2"
 
       - conditions:
           - condition: trigger
@@ -262,26 +258,14 @@ action:
               entity_id:
                 - !input twizy_2_zuordnung_geprueft_helper
                 - !input twizy_2_alternative_getestet_helper
+          - variables:
+              twizy_2_zielsteckdose: >-
+                {{ aussen_socket_helper if states(innen_socket_helper) == 'twizy_1' else innen_socket_helper }}
           - service: input_select.select_option
             target:
-              entity_id: !input aussen_socket_helper
+              entity_id: "{{ twizy_2_zielsteckdose }}"
             data:
               option: "twizy_2"
-          - if:
-              - condition: state
-                entity_id: !input twizy_1_location
-                state: "home"
-            then:
-              - service: input_boolean.turn_off
-                target:
-                  entity_id:
-                    - !input twizy_1_zuordnung_geprueft_helper
-                    - !input twizy_1_alternative_getestet_helper
-              - service: input_select.select_option
-                target:
-                  entity_id: !input innen_socket_helper
-                data:
-                  option: "twizy_1"
 
       # --- Regel 2: kurze Fahrt beider Fahrzeuge = Platztausch ---
       - conditions:
