@@ -343,6 +343,16 @@ Fahrzeug wird pro Prüfzyklus (Default alle 10 min) berechnet:
   decken, wird unabhängig vom Preis sofort weiter geladen, damit die
   Deadline nicht gerissen wird.
 
+**Kein Abschalten mitten im Zeitfenster:** Ein einmal begonnenes
+Preis-Zeitfenster wird immer bis zu seinem Ende durchgeladen. Ohne diese
+Absicherung könnte die kontinuierlich sinkende OVMS-Restzeitschätzung
+während des Ladens dazu führen, dass die benötigte Ladedauer (und damit
+die Auswahl der günstigsten Zeitfenster) mitten in einem bereits laufenden
+Fenster neu berechnet wird und das aktuelle Fenster herausfällt – die
+Steckdose würde dann unter Last ab- und beim nächsten Prüfzyklus wieder
+anschalten. Neu entschieden wird stattdessen immer erst mit dem nächsten
+Zeitfenster.
+
 **Wann ist der nächste Ladestart?** Jeder Prüfzyklus schreibt eine lesbare
 Kurzfassung in `twizy_{1,2}_naechster_ladestart` (im Dashboard als "Status"
 zuoberst): `Lädt jetzt`, ein Zeitpunkt wie `Di 20.08. 03:00`, oder `Kein
@@ -387,19 +397,27 @@ gleicht das mit einem Korrekturfaktor aus
 (`twizy_{1,2}_ladezeit_korrekturfaktor`, Start 1,0): Die tatsächlich
 verwendete Ladedauer ist immer `OVMS-Schätzung × Korrekturfaktor`.
 
-Der Faktor lernt aus vergangenen Ladungen: Beim Einschalten wird die
-aktuelle OVMS-Schätzung gemerkt (`twizy_{1,2}_sitzung_start_etr_minuten`,
-intern); erreicht der SoC beim Ausschalten mindestens die
+Der Faktor lernt aus vergangenen Ladungen: Beim ersten Einschalten eines
+neuen Ladebedarfs wird die aktuelle OVMS-Schätzung gemerkt
+(`twizy_{1,2}_sitzung_start_etr_minuten`, intern) – "neuer Ladebedarf"
+heißt hier: die vorherige Sitzung endete durch Erreichen von "voll", nicht
+durch eine bloße Preis-Pause. Wird zwischenzeitlich nur pausiert und später
+im selben Ladebedarf wieder eingeschaltet (z. B. weil das Laden über
+mehrere günstige Zeitfenster verteilt ist), bleibt dieser Startwert
+unverändert erhalten – sonst würde beim Ausschalten nur die Dauer des
+letzten kurzen Teilfensters statt der tatsächlich benötigten Gesamtzeit in
+die Berechnung einfließen. Erreicht der SoC beim Ausschalten mindestens die
 Korrektur-SoC-Schwelle (Blueprint-Eingabe `correction_factor_soc_threshold`,
-Default 95 %), wird das Verhältnis tatsächliche/geschätzte Dauer dieser
-Sitzung berechnet (auf 0,3–6,0 begrenzt, um Ausreißer abzufedern) und der
-Korrekturfaktor per gleitendem Mittelwert angepasst (70 % alter Wert, 30 %
-neues Verhältnis). Die 95 %-Schwelle liegt bewusst unter der "voll"-Schwelle
-(Default 97 %), weil die letzten Prozent oft per Erhaltungsladung sehr
-langsam laufen und die Messung sonst verzerren würden. Sitzungen, die diese
-Schwelle nicht erreichen (z. B. vorzeitig abgebrochen), fließen nicht in die
-Anpassung ein. Der aktuelle Faktor ist im Dashboard unter "Einstellungen"
-als Debug-Wert sichtbar, die daraus berechnete erwartete Gesamt-Ladedauer
+Default 95 %), wird das Verhältnis tatsächliche/geschätzte Gesamtdauer
+(alle zusammengehörigen Zeitfenster dieses Ladebedarfs summiert) berechnet
+(auf 0,3–6,0 begrenzt, um Ausreißer abzufedern) und der Korrekturfaktor per
+gleitendem Mittelwert angepasst (70 % alter Wert, 30 % neues Verhältnis).
+Die 95 %-Schwelle liegt bewusst unter der "voll"-Schwelle (Default 97 %),
+weil die letzten Prozent oft per Erhaltungsladung sehr langsam laufen und
+die Messung sonst verzerren würden. Sitzungen, die diese Schwelle nicht
+erreichen (z. B. vorzeitig abgebrochen), fließen nicht in die Anpassung
+ein. Der aktuelle Faktor ist im Dashboard unter "Einstellungen" als
+Debug-Wert sichtbar, die daraus berechnete erwartete Gesamt-Ladedauer
 (`twizy_{1,2}_erwartete_ladedauer_minuten`) steht direkt in der jeweiligen
 "Status"-Karte.
 

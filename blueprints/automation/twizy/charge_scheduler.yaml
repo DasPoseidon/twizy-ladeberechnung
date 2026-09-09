@@ -17,7 +17,10 @@ blueprint:
     2. Ermittelt die benötigte Ladedauer aus der vom OVMS geschätzten
        Restzeit bis voll, multipliziert mit einem selbstlernenden
        Korrekturfaktor (aus dem Verhältnis tatsächlicher zu geschätzter
-       Ladedauer vergangener Ladungen).
+       Ladedauer vergangener Ladungen - dabei zählt die GESAMTE
+       Einschaltzeit seit dem letzten echten Ladebedarf-Neustart, auch wenn
+       sich das über mehrere durch Preispausen getrennte Zeitfenster
+       verteilt hat, nicht nur die Dauer des letzten einzelnen Fensters).
     3. Bestimmt die nächste Abfahrtszeit (Deadline) aus dem
        Abfahrtszeit-Helper des aktuellen bzw. (falls die heutige Zeit schon
        verstrichen ist) eines der nächsten Tage – für jeden Wochentag ist
@@ -41,13 +44,18 @@ blueprint:
        1x/Tag, unabhängig davon, wie oft dieser Scheduler läuft.
     5. Schaltet die zugeordnete Steckdose in diesen Zeitfenstern ein – außer
        die Deadline wird sonst verfehlt, dann wird notfalls sofort
-       weitergeladen ("Aufhol-Logik").
+       weitergeladen ("Aufhol-Logik"). Ein einmal begonnenes Zeitfenster
+       wird dabei immer bis zu seinem Ende durchgeladen, auch wenn sich die
+       zugrunde liegende Berechnung (z. B. weil die OVMS-Restzeit während
+       des Ladens sinkt) zwischenzeitlich ändert – ein Abschalten mitten im
+       Zeitfenster unter Last wird so vermieden, neu entschieden wird immer
+       erst wieder mit dem nächsten Zeitfenster.
     6. Wird die Steckdose von Hand eingeschaltet, wird das als manueller
-       Ladewunsch erkannt (Heuristik: Zustandsänderung ohne automation-
-       Kontext) und die Preisoptimierung übersteuert – die Abfahrtszeit als
-       spätester Voll-Zeitpunkt bleibt aber weiter gültig (die Automatisierung
-       schaltet trotzdem ab, sobald das Fahrzeug voll ist oder es wegfährt,
-       siehe Punkt 1).
+       Ladewunsch erkannt (Heuristik: Zustandsänderung, die keiner
+       Automatisierung zugeordnet werden kann) und die Preisoptimierung
+       übersteuert – die Abfahrtszeit als spätester Voll-Zeitpunkt bleibt
+       aber weiter gültig (die Automatisierung schaltet trotzdem ab, sobald
+       das Fahrzeug voll ist oder es wegfährt, siehe Punkt 1).
     7. Nach dem Einschalten wird geprüft, ob das Fahrzeug tatsächlich zu
        laden beginnt - anhand des OVMS-Lade-/Fahrzustands-Sensors ODER
        eines messbaren Ladestroms an der zugeordneten Steckdose (über der
@@ -605,12 +613,20 @@ action:
           # Ladezeit-Korrekturfaktor: nur aktualisieren, wenn diese Ladung
           # bis mindestens correction_factor_soc_threshold gekommen ist und
           # beim Einschalten eine gültige OVMS-Restzeitschätzung vorlag
-          # (session_start_etr_helper, siehe switch_on-Schritt unten).
+          # (session_start_etr_helper, siehe switch_on-Schritt unten). Dabei
+          # bewusst die GESAMTE Einschaltzeit seit dem letzten echten
+          # Ladebedarf-Neustart verwenden (prior_today_minutes +
+          # session_minutes), nicht nur die Dauer dieses letzten
+          # Teilfensters - sonst würde bei über mehrere Preisfenster
+          # verteiltem Laden (Pause zwischen den Fenstern) nur die Dauer
+          # des kurzen letzten Fensters statt der tatsächlich benötigten
+          # Gesamtladezeit einfließen und den Faktor verfälschen.
           - variables:
               final_soc: "{{ states(soc_sensor) | float }}"
               predicted_etr_minutes: "{{ states(session_start_etr_helper) | float }}"
+              total_charging_minutes: "{{ prior_today_minutes + session_minutes }}"
               correction_ratio: >-
-                {{ [[session_minutes / predicted_etr_minutes, 0.3] | max, 6.0] | min if predicted_etr_minutes > 0 else none }}
+                {{ [[total_charging_minutes / predicted_etr_minutes, 0.3] | max, 6.0] | min if predicted_etr_minutes > 0 else none }}
           - if:
               - condition: template
                 value_template: "{{ final_soc >= correction_factor_soc_threshold and correction_ratio is not none }}"
@@ -638,11 +654,25 @@ action:
       - condition: template
         value_template: "{{ trigger.entity_id == current_switch }}"
     then:
-      - service: input_number.set_value
-        target:
-          entity_id: "{{ session_start_etr_helper }}"
-        data:
-          value: "{{ (ovms_etr_minutes | round(0) | int) if ovms_etr_minutes is not none else 0 }}"
+      # Startwert nur bei echtem Neubeginn eines Ladebedarfs setzen - die
+      # letzte Sitzung endete durch Erreichen von "voll"
+      # (charging_finished_helper war "an"), oder es liegt noch gar kein
+      # Startwert vor. Pausiert der Scheduler dagegen nur zwischen zwei
+      # Preisfenstern innerhalb desselben Ladebedarfs, bleibt der
+      # ursprüngliche Startwert erhalten - sonst würde der
+      # Ladezeit-Korrekturfaktor oben nur anhand des letzten kurzen
+      # Teilfensters statt der tatsächlichen Gesamtladezeit berechnet.
+      - if:
+          - condition: template
+            value_template: >-
+              {{ is_state(charging_finished_helper, 'on') or
+                 (states(session_start_etr_helper) | float) <= 0 }}
+        then:
+          - service: input_number.set_value
+            target:
+              entity_id: "{{ session_start_etr_helper }}"
+            data:
+              value: "{{ (ovms_etr_minutes | round(0) | int) if ovms_etr_minutes is not none else 0 }}"
       - service: input_boolean.turn_off
         target:
           entity_id: "{{ charging_finished_helper }}"
@@ -825,6 +855,32 @@ action:
            is_home and not is_full and has_real_deadline and
            not is_state(socket_zuordnung_geprueft_helper, 'on') and
            seconds_since_arrival <= connectivity_probe_window_seconds }}
+      # Verifikation "erwartetes Fahrzeug lädt tatsächlich" über den
+      # OVMS-Lade-/Fahrzustand statt eines (oft nicht vorhandenen)
+      # Kabel-gesteckt-Sensors - zusätzlich abgesichert über den gemessenen
+      # Ladestrom der eigenen Steckdose: Wird spürbar Strom gezogen (über
+      # der Ladeschluss-Schwelle, siehe charge_complete_power_threshold),
+      # hängt dort etwas und lädt, unabhängig davon, ob der OVMS-Sensor das
+      # (rechtzeitig) meldet. Weiter oben platziert als der Rest der
+      # Verifikations-Variablen (siehe unten), weil should_charge_now
+      # gleich darunter bereits darauf zugreift.
+      charging_values_list: "{{ charging_state_values.split(',') | map('trim') | map('lower') | list }}"
+      is_charging_now: "{{ (states(charge_state_sensor) | lower | trim) in charging_values_list }}"
+      is_drawing_power: "{{ (states(current_power_sensor) | float(0)) > charge_complete_power_threshold }}"
+      verified_charging: "{{ is_charging_now or is_drawing_power }}"
+      # Einmal für dieses Zeitfenster getroffene Lade-Entscheidungen nicht
+      # mittendrin wieder zurücknehmen: Die OVMS-Restzeitschätzung sinkt
+      # kontinuierlich, während geladen wird - dadurch kann needed_slots
+      # (und damit die "günstigste Fenster"-Auswahl oben) mitten in einem
+      # bereits laufenden Zeitfenster schrumpfen und das aktuelle Fenster
+      # herausfallen, obwohl gerade aktiv geladen wird. already_committed_
+      # this_slot bleibt genau für die Dauer des aktuellen epoch_slot "wahr"
+      # (erkannt daran, dass current_switch schon in genau diesem Slot
+      # eingeschaltet wurde) und verhindert so ein Abschalten unter Last -
+      # mit dem nächsten Zeitfenster wird ganz normal neu entschieden.
+      current_switch_on_epoch_slot: >-
+        {{ ((states[current_switch].last_changed.timestamp() | int) // price_resolution_seconds) if is_state(current_switch, 'on') else none }}
+      already_committed_this_slot: "{{ is_state(current_switch, 'on') and verified_charging and current_switch_on_epoch_slot == current_epoch_slot }}"
       # should_charge_price ist bewusst NICHT an has_real_deadline gekoppelt:
       # ohne gesetzte Abfahrtszeit soll trotzdem zu den günstigsten bereits
       # bekannten Zeitfenstern geladen werden (nur die Aufhol-Logik
@@ -838,7 +894,7 @@ action:
       # "Steckdose pausieren"-Funktion (eigener stop-Guard weiter oben,
       # von should_charge_now komplett unabhängig).
       should_charge_now: >-
-        {{ is_home and ((not is_full and (is_manual or should_charge_price or (has_real_deadline and must_charge_now) or connectivity_probe_needed)) or
+        {{ is_home and ((not is_full and (is_manual or should_charge_price or (has_real_deadline and must_charge_now) or connectivity_probe_needed or already_committed_this_slot)) or
            (is_full and maintenance_slot_now)) }}
       # Lesbare Anzeige "wann ist der nächste Ladestart" (siehe
       # next_start_helper unten): laufende Ladung -> "jetzt", sonst der
@@ -851,17 +907,6 @@ action:
         {{ 'Lädt jetzt' if should_charge_now else
            (as_local(as_datetime(next_charge_start_epoch_slot * price_resolution_seconds)).strftime('%a %d.%m. %H:%M')
             if next_charge_start_epoch_slot is not none else 'Kein Ladebedarf geplant') }}
-      # Verifikation "erwartetes Fahrzeug lädt tatsächlich" über den
-      # OVMS-Lade-/Fahrzustand statt eines (oft nicht vorhandenen)
-      # Kabel-gesteckt-Sensors - zusätzlich abgesichert über den gemessenen
-      # Ladestrom der eigenen Steckdose: Wird spürbar Strom gezogen (über
-      # der Ladeschluss-Schwelle, siehe charge_complete_power_threshold),
-      # hängt dort etwas und lädt, unabhängig davon, ob der OVMS-Sensor das
-      # (rechtzeitig) meldet.
-      charging_values_list: "{{ charging_state_values.split(',') | map('trim') | map('lower') | list }}"
-      is_charging_now: "{{ (states(charge_state_sensor) | lower | trim) in charging_values_list }}"
-      is_drawing_power: "{{ (states(current_power_sensor) | float(0)) > charge_complete_power_threshold }}"
-      verified_charging: "{{ is_charging_now or is_drawing_power }}"
       seconds_since_switch_on: "{{ (now() - states[current_switch].last_changed).total_seconds() if is_state(current_switch, 'on') else 0 }}"
       verification_grace_seconds: "{{ timedelta(**verification_grace_period).total_seconds() }}"
       # Schneller Vorab-Check: Fließt gar kein nennenswerter Strom (statt nur
