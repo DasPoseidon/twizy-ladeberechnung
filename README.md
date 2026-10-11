@@ -353,6 +353,18 @@ Steckdose würde dann unter Last ab- und beim nächsten Prüfzyklus wieder
 anschalten. Neu entschieden wird stattdessen immer erst mit dem nächsten
 Zeitfenster.
 
+**Kleine Preis-Pausen werden aufgefüllt:** Die "günstigste Einzel-Fenster"-
+Auswahl kümmert sich von sich aus nicht darum, ob die gewählten Zeitfenster
+zusammenhängen – bei Viertelstundenpreisen können so über den Tag verteilt
+viele kurze, durch kleine teure Lücken getrennte Ladeblöcke entstehen, die
+jedes Mal ein komplettes Aus-/Wiedereinschalten auslösen (Relais-Verschleiß,
+bei manchen Ladegeräten auch ein Problem für die Kühlung, die beim
+Abschalten sofort mit aussetzt). Ist die Lücke zwischen zwei ausgewählten
+Zeitfenstern kürzer als `min_off_gap` (Default 30 min), wird sie deshalb
+mit aufgefüllt – auf Kosten eines etwas höheren Strompreises für diese
+Lücke. Mit `min_off_gap: 0` lässt sich diese Glättung deaktivieren
+(exakte Preisoptimierung ohne Rücksicht auf die Schalthäufigkeit).
+
 **Wann ist der nächste Ladestart?** Jeder Prüfzyklus schreibt eine lesbare
 Kurzfassung in `twizy_{1,2}_naechster_ladestart` (im Dashboard als "Status"
 zuoberst): `Lädt jetzt`, ein Zeitpunkt wie `Di 20.08. 03:00`, oder `Kein

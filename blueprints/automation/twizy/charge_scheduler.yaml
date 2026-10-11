@@ -41,7 +41,14 @@ blueprint:
        Tibber-Vertrag - keine Einstellung nötig. Die Tibber-Integration ruft
        die eigentliche Tibber-API dabei nur dann auf, wenn die angefragten
        Daten nicht schon lokal vorliegen – in der Praxis also ungefähr
-       1x/Tag, unabhängig davon, wie oft dieser Scheduler läuft.
+       1x/Tag, unabhängig davon, wie oft dieser Scheduler läuft. Liegt
+       zwischen zwei ausgewählten Zeitfenstern eine Pause, die kürzer als
+       die Mindestdauer `min_off_gap` ist, wird sie mit aufgefüllt
+       (durchgeladen statt zwischendurch abzuschalten) - vermeidet häufiges
+       Schalten unter Last (Relais-Verschleiß, bei manchen Ladegeräten auch
+       ein Problem für die Kühlung, die beim Abschalten sofort mit
+       aussetzt) auf Kosten eines etwas höheren Strompreises für diese
+       Lücke.
     5. Schaltet die zugeordnete Steckdose in diesen Zeitfenstern ein – außer
        die Deadline wird sonst verfehlt, dann wird notfalls sofort
        weitergeladen ("Aufhol-Logik"). Ein einmal begonnenes Zeitfenster
@@ -316,6 +323,22 @@ blueprint:
       selector:
         duration: {}
 
+    min_off_gap:
+      name: Mindestdauer einer Preis-Pause
+      description: >
+        Liegt zwischen zwei für die Preisoptimierung ausgewählten
+        Zeitfenstern eine Pause, die kürzer als diese Dauer ist, wird
+        einfach durchgeladen statt zwischendurch abzuschalten und kurz
+        darauf wieder einzuschalten - häufiges Schalten unter Last
+        (Relais-Verschleiß, bei manchen Ladegeräten auch ein Problem für
+        die Kühlung, die beim Abschalten sofort mit aussetzt) wird dadurch
+        auf Kosten eines etwas höheren Strompreises vermieden. Mit 0
+        deaktiviert (keine Glättung, exakte Preisoptimierung).
+      default:
+        minutes: 30
+      selector:
+        duration: {}
+
     location_sensor:
       name: Standort-Entität dieses Fahrzeugs
       description: >
@@ -380,6 +403,7 @@ variables:
   verification_grace_period: !input verification_grace_period
   no_connection_power_threshold: !input no_connection_power_threshold
   no_connection_grace_period: !input no_connection_grace_period
+  min_off_gap: !input min_off_gap
   location_sensor: !input location_sensor
   connectivity_probe_window: !input connectivity_probe_window
   # Alle folgenden Helper-Entity-IDs folgen im Paket
@@ -812,7 +836,30 @@ action:
             | selectattr('epoch_slot', 'le', deadline_epoch_slot)
             | list
             | sort(attribute='price'))[:needed_slots | int] }}
-      plan_offsets: "{{ cheapest_in_window | map(attribute='epoch_slot') | list | sort }}"
+      plan_offsets_raw: "{{ cheapest_in_window | map(attribute='epoch_slot') | list | sort }}"
+      # Die reine "günstigste Einzel-Fenster"-Auswahl oben kümmert sich
+      # nicht darum, ob die gewählten Zeitfenster zusammenhängen - bei
+      # Viertelstundenpreisen können so über den Tag verteilt viele kurze,
+      # durch kleine teure Lücken getrennte Blöcke entstehen, die jedes Mal
+      # ein komplettes Aus-/Wiedereinschalten auslösen (Relais-Verschleiß,
+      # bei manchen Ladegeräten auch ein Problem für die Kühlung). Ist die
+      # Lücke zwischen zwei ausgewählten Zeitfenstern kürzer als
+      # min_off_gap, wird sie deshalb mit aufgefüllt (durchgeladen statt
+      # zwischendurch abzuschalten) - auf Kosten eines etwas höheren
+      # Strompreises für diese Lücke.
+      min_off_gap_slots: "{{ (timedelta(**min_off_gap).total_seconds() // price_resolution_seconds) | int }}"
+      plan_offsets: >-
+        {% set ns = namespace(result=[], prev=none) %}
+        {% for slot in plan_offsets_raw %}
+          {% if ns.prev is not none and (slot - ns.prev - 1) <= min_off_gap_slots %}
+            {% for fill in range(ns.prev + 1, slot) %}
+              {% set ns.result = ns.result + [fill] %}
+            {% endfor %}
+          {% endif %}
+          {% set ns.result = ns.result + [slot] %}
+          {% set ns.prev = slot %}
+        {% endfor %}
+        {{ ns.result }}
       should_charge_price: "{{ current_epoch_slot in plan_offsets }}"
       # Mindest-Einschaltzeit pro Tag: greift nur, wenn das Fahrzeug schon
       # voll ist (sonst deckt die normale Ladeplanung die Einschaltzeit
